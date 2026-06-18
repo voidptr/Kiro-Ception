@@ -236,3 +236,24 @@ src/kiro_ception/
 ├── memory.py              # Memory limit utilities (get_memory_limit, select_sessions_within_limit)
 └── models.py              # Pydantic data models
 ```
+
+```
+scripts/
+├── run_mutmut.sh          # Mutation testing runner
+└── search-via-peers.py    # Dev helper: search only remote peers (bypasses local index)
+```
+
+### Dev Helper: search-via-peers.py
+
+Sends encrypted search requests directly to configured peers, displaying results
+without mixing in local index matches. Useful for verifying peer connectivity,
+encryption, and result quality during development.
+
+```bash
+uv run python3.11 scripts/search-via-peers.py portable-ruby
+uv run python3.11 scripts/search-via-peers.py some multi word query here
+```
+
+Shows per-peer connection status (✅/❌/⚠️) and results with scores, roles,
+content previews, and workspace paths. Reads peer config from
+`~/.config/kiro-ception/config.toml`.

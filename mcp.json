@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "kiro-ception": {
-      "command": "uv",
-      "args": ["tool", "run", "--from", "git+https://github.com/DevOps-Nirvana/Kiro-Ception", "kiro-ception"]
+      "command": "/path/to/your/kiro-ception/folder/.venv/bin/kiro-ception"
     }
   }
 }

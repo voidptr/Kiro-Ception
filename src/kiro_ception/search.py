@@ -426,6 +426,7 @@ def handle_search_request(request: dict) -> dict:
         max_results=request.get("max_results", 10),
         offset=request.get("offset", 0),
         include_tool_context=request.get("include_tool_context", False),
+        from_peer=request.get("from_peer", False),
     )
 
 
@@ -440,6 +441,7 @@ def search(
     max_results: int,
     offset: int,
     include_tool_context: bool = False,
+    from_peer: bool = False,
 ) -> dict:
     """Search implementation — always runs as the engine.
 
@@ -451,7 +453,10 @@ def search(
                                    context_size, threshold, max_results, offset,
                                    include_tool_context)
 
-    # Fan out to peers if configured
+    # Fan out to peers if configured (skip if this request came from a peer to avoid loops)
+    if from_peer:
+        return local_response
+
     return _search_with_peers(
         local_response, query, workspace, source, after, before,
         context_size, threshold, max_results, offset, include_tool_context,

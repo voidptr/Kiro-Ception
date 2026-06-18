@@ -90,6 +90,13 @@ rescan_interval_minutes = 10
 # Each concurrent Kiro-Ception instance requires a unique engine_port value.
 engine_port = 19742
 
+# Bind address for the engine HTTP server.
+# Default: auto-detects based on peers config.
+#   - If peers are enabled: binds to 0.0.0.0 (all interfaces) for remote access
+#   - If peers are disabled: binds to 127.0.0.1 (loopback only)
+# Override explicitly if you need a specific interface.
+# listen_address = "0.0.0.0"
+
 # If true, delay engine election until the first tool call (legacy behavior).
 # Default (false) initializes eagerly at startup so the HTTP dashboard and
 # indexer are available immediately.

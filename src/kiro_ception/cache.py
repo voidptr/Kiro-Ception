@@ -327,8 +327,14 @@ class EmbeddingCache:
         if conditions:
             where_clause = "AND " + " AND ".join(conditions)
 
-        # FTS5 MATCH query — escape special characters for safety
-        fts_query = query.replace('"', '""')
+        # FTS5 MATCH query — quote each token to prevent interpretation as column names
+        # or operators. This handles terms like "ruby" that FTS5 would otherwise
+        # try to interpret as column references.
+        fts_query = " ".join(
+            f'"{token.replace(chr(34), chr(34)+chr(34))}"'
+            for token in query.split()
+            if token.strip()
+        )
 
         sql = f"""
             SELECT m.uuid, m.session_id, m.workspace, m.timestamp, m.role,
@@ -345,7 +351,7 @@ class EmbeddingCache:
 
         try:
             cursor = self.conn.execute(sql, params)
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
             # FTS query syntax error (e.g., special chars) — fall back to no results
             return []
 

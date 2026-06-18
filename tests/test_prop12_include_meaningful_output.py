@@ -16,6 +16,7 @@ Test strategy:
   when meaningful output exists
 """
 
+import json
 import re
 
 from hypothesis import given, settings
@@ -157,6 +158,11 @@ def test_prop12_no_output_excerpts_when_flag_disabled(action: dict):
             # Use a distinctive middle chunk to avoid false positives
             chunk = field_value[15:60]
             if chunk and len(chunk) > 5:
+                # Avoid false positives: if the chunk also appears in the input data
+                # (e.g., file path or query), it's not a leak from output
+                input_str = json.dumps(action.get("input", {}))
+                if chunk in input_str:
+                    continue
                 assert chunk not in summary, (
                     f"Meaningful {field} content should not leak into summary when disabled.\n"
                     f"Leaked chunk: {chunk!r}\n"

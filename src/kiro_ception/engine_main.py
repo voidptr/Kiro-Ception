@@ -40,6 +40,12 @@ from pathlib import Path
 _process_start_time = time.time()
 
 
+def _log(msg: str, flush: bool = True):
+    """Print a timestamped log message."""
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] [kiro-ception] {msg}", flush=flush)
+
+
 
 def _preload_native_extensions(backend_type: str):
     """Eagerly import native extensions that deadlock when loaded from background threads.
@@ -206,10 +212,20 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                 length = int(self.headers.get("Content-Length", 0))
                 raw_body = self.rfile.read(length) if length > 0 else b"{}"
 
-                # Decrypt if encrypted
+                # Decrypt if encrypted (only enforce for non-loopback peers)
+                client_ip = self.client_address[0] if self.client_address else None
+                is_loopback = client_ip in ("127.0.0.1", "::1", None)
+
+                if not is_loopback:
+                    _log(f"Incoming POST {self.path} from {client_ip} (content_type={content_type}, len={length})")
+
                 try:
                     from .peers import decrypt_request_body
-                    body = decrypt_request_body(raw_body, content_type)
+                    if is_loopback and content_type != "application/x-kiroception-encrypted":
+                        # Local MCP proxy — skip encryption check
+                        body = json.loads(raw_body) if raw_body else {}
+                    else:
+                        body = decrypt_request_body(raw_body, content_type)
                 except PermissionError as e:
                     self.send_response(401)
                     self.send_header("Content-Type", "application/json")
@@ -220,8 +236,13 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     body = json.loads(raw_body) if raw_body else {}
 
                 if self.path == "/search":
+                    if not is_loopback:
+                        body["from_peer"] = True
                     result = search_handler(body)
-                    self._send_response_maybe_encrypted(result)
+                    if is_loopback:
+                        self._send_json(result)
+                    else:
+                        self._send_response_maybe_encrypted(result)
 
                 elif self.path == "/reindex":
                     indexer = indexer_getter()
@@ -258,7 +279,7 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     self._send_json({"error": "not found"}, 404)
 
             except Exception as e:
-                print(f"POST {self.path} error: {traceback.format_exc()}", flush=True)
+                _log(f"POST {self.path} error from {self.client_address}: {traceback.format_exc()}")
                 self._send_json({"error": str(e)}, 500)
 
         def do_GET(self):
@@ -381,7 +402,7 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     self._send_json({"error": "not found"}, 404)
 
             except Exception as e:
-                print(f"GET {self.path} error: {traceback.format_exc()}", flush=True)
+                _log(f"GET {self.path} error from {self.client_address}: {traceback.format_exc()}")
                 self._send_json({"error": str(e)}, 500)
 
         def _send_dashboard(self):
@@ -429,6 +450,15 @@ def main():
     cache_dir = expand_path(config.embedding.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # Determine bind address: use config if set, otherwise auto-detect
+    # (0.0.0.0 if peers enabled for remote connectivity, 127.0.0.1 otherwise)
+    if config.server.listen_address:
+        bind_address = config.server.listen_address
+    elif config.peers.enabled:
+        bind_address = "0.0.0.0"
+    else:
+        bind_address = "127.0.0.1"
+
     # Configure output — redirect stdout/stderr to file if configured
     if config.server.engine_log_file:
         log_path = expand_path(config.server.engine_log_file)
@@ -436,6 +466,7 @@ def main():
         log_fh = open(log_path, "a", encoding="utf-8")
         sys.stdout = log_fh
         sys.stderr = log_fh
+        _log(f"Engine starting (pid={os.getpid()}, log={log_path})")
 
     # === PRELOAD NATIVE EXTENSIONS (before any threads) ===
     _preload_native_extensions(config.embedding.backend)
@@ -453,7 +484,7 @@ def main():
 
     # Write engine info
     _write_engine_info(port, os.getpid(), cache_dir)
-    print(f"Acquired engineship (pid={os.getpid()}, port={port})")
+    _log(f"Acquired engineship (pid={os.getpid()}, port={port})")
 
     # === START BACKGROUND INDEXER ===
     from .background_indexer import get_background_indexer
@@ -530,7 +561,7 @@ def main():
             },
             "server": {
                 "engine_port": current_config.server.engine_port,
-                "listen_address": f"127.0.0.1:{port}",
+                "listen_address": f"{bind_address}:{port}",
             },
             "peers": {
                 "enabled": current_config.peers.enabled,
@@ -554,7 +585,7 @@ def main():
             try:
                 _write_engine_info(port, os.getpid(), cache_dir)
             except Exception as e:
-                print(f"Heartbeat write failed: {e}")
+                _log(f"Heartbeat write failed: {e}")
 
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="heartbeat")
     heartbeat_thread.start()
@@ -572,12 +603,12 @@ def main():
 
     # Try primary port, fall back to +1
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", port), RequestHandler)
+        server = ThreadingHTTPServer((bind_address, port), RequestHandler)
     except OSError:
         port += 1
         _write_engine_info(port, os.getpid(), cache_dir)
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", port), RequestHandler)
+            server = ThreadingHTTPServer((bind_address, port), RequestHandler)
         except OSError:
             print(
                 f"ERROR: Could not bind to port {port - 1} or {port}. "
@@ -594,7 +625,7 @@ def main():
     shutdown_event = threading.Event()
 
     def _shutdown_handler(signum, frame):
-        print(f"Received signal {signum}, shutting down...")
+        _log(f"Received signal {signum}, shutting down...")
         shutdown_event.set()
 
     signal.signal(signal.SIGINT, _shutdown_handler)
@@ -605,8 +636,8 @@ def main():
     _NO_FOLLOWER_TIMEOUT = 120  # Shut down if no follower registers within 2 minutes
     _engine_start_time = time.time()
 
-    print(f"HTTP server listening on 127.0.0.1:{port}")
-    print(f"Dashboard: http://127.0.0.1:{port}/")
+    _log(f"HTTP server listening on {bind_address}:{port}")
+    _log(f"Dashboard: http://127.0.0.1:{port}/")
 
     # Run server on main thread (blocking)
     try:
@@ -620,12 +651,12 @@ def main():
                 # Only shut down if at least one follower registered and all are now dead
                 if follower_registry.count > 0:
                     if not follower_registry.has_live_followers():
-                        print("All followers are dead — shutting down")
+                        _log("All followers are dead — shutting down")
                         break
                 elif now - _engine_start_time > _NO_FOLLOWER_TIMEOUT:
                     # No follower ever registered — spawning client likely died
                     # before making any requests. Shut down to avoid orphan.
-                    print(
+                    _log(
                         f"No followers registered within {_NO_FOLLOWER_TIMEOUT}s "
                         f"— shutting down (orphan protection)"
                     )
@@ -633,7 +664,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        print("Shutting down...")
+        _log("Shutting down...")
         server.server_close()
         indexer.stop()
         try:
@@ -645,8 +676,33 @@ def main():
             (cache_dir / "engine.json").unlink(missing_ok=True)
         except OSError:
             pass
-        print("Stopped.")
+        _log("Stopped.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        # Last-resort crash logging — write to engine.log if possible
+        import traceback as _tb
+        crash_msg = (
+            f"\n{'='*60}\n"
+            f"FATAL ENGINE CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"{'='*60}\n"
+            f"{_tb.format_exc()}\n"
+            f"{'='*60}\n"
+        )
+        # Try to write to the log file even if stdout redirection failed
+        try:
+            from pathlib import Path as _Path
+            crash_log = _Path("~/.cache/kiro-ception/engine.log").expanduser()
+            crash_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(crash_log, "a", encoding="utf-8") as f:
+                f.write(crash_msg)
+        except Exception:
+            pass
+        # Also print to stderr in case it's still connected
+        print(crash_msg, file=sys.__stderr__, flush=True)
+        raise
