@@ -3,4 +3,4 @@
 from .server import main
 
 __all__ = ["main"]
-__version__ = "1.0.7"
+__version__ = "1.0.8"
