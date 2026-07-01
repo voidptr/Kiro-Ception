@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataModelVersion": 1,
+  "id": "sess_a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "title": "Implement user authentication",
+  "agentMode": "vibe",
+  "workspacePaths": [
+    "/Users/testuser/projects/my-webapp"
+  ],
+  "createdAt": "2026-06-28T10:30:00.000Z",
+  "lastModifiedAt": "2026-06-28T11:45:30.500Z",
+  "semanticReviewEnabled": false,
+  "ftaEnabled": false,
+  "modelId": "auto",
+  "autopilot": true,
+  "description": "Added JWT-based authentication to the Express API.",
+  "status": "completed"
+}

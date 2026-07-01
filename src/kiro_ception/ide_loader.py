@@ -1,11 +1,13 @@
 """Load conversations from Kiro IDE storage.
 
-Supports two formats:
+Supports three formats:
 - Legacy: .chat files in globalStorage/kiro.kiroagent/*/*.chat
-- Current: workspace-sessions/<base64_workspace>/<uuid>.json
+- Workspace-sessions: workspace-sessions/<base64_workspace>/<uuid>.json
+- Kiro 1.0: ~/.kiro/sessions/<sha256_prefix>/<session_id>/{session.json, messages.jsonl}
 """
 
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -287,6 +289,382 @@ def _list_workspace_sessions() -> list[SessionInfo]:
                     logger.debug(f"Could not stat {session_file}: {e}")
 
     return sessions
+
+
+# --- Kiro 1.0 ~/.kiro/sessions format ---
+
+
+def _get_kiro_sessions_dirs() -> list[Path]:
+    """Get Kiro 1.0 session directories across platforms.
+
+    Kiro 1.0 stores sessions at ~/.kiro/sessions/<sha256_prefix>/<session_id>/
+    where each session directory contains session.json (metadata) and
+    messages.jsonl (conversation content).
+    """
+    candidates = [
+        "~/.kiro/sessions",
+    ]
+    dirs = []
+    for candidate in candidates:
+        p = Path(candidate).expanduser()
+        if p.is_dir():
+            dirs.append(p)
+    return dirs
+
+
+def _workspace_path_to_sha256_prefix(workspace_path: str) -> str:
+    """Convert a workspace path to the SHA256 prefix used as directory name.
+
+    Kiro 1.0 uses the first 16 hex characters of SHA256(workspace_path)
+    as the directory name under ~/.kiro/sessions/.
+    """
+    return hashlib.sha256(workspace_path.encode()).hexdigest()[:16]
+
+
+def _list_kiro_sessions() -> list[SessionInfo]:
+    """List all sessions from Kiro 1.0 ~/.kiro/sessions/ directories.
+
+    Each session has a session.json with metadata including workspace paths,
+    timestamps, title, and mode. Uses stat() for mtime where possible,
+    falls back to parsing session.json for timestamps.
+    """
+    sessions = []
+
+    for sessions_base in _get_kiro_sessions_dirs():
+        for workspace_dir in sessions_base.iterdir():
+            if not workspace_dir.is_dir():
+                continue
+
+            for session_dir in workspace_dir.iterdir():
+                if not session_dir.is_dir():
+                    continue
+
+                messages_file = session_dir / "messages.jsonl"
+                session_file = session_dir / "session.json"
+
+                if not messages_file.exists():
+                    continue
+
+                try:
+                    # Use stat for mtime (efficient for rescan)
+                    msg_stat = messages_file.stat()
+
+                    # Skip empty message files
+                    if msg_stat.st_size == 0:
+                        continue
+
+                    session_id = session_dir.name
+                    workspace = ""
+                    created = None
+
+                    # Parse session.json for metadata
+                    if session_file.exists():
+                        try:
+                            meta = json.loads(session_file.read_text(encoding="utf-8"))
+                            workspace_paths = meta.get("workspacePaths", [])
+                            if workspace_paths:
+                                workspace = workspace_paths[0]
+                            created = _parse_timestamp(meta.get("createdAt"))
+                        except (json.JSONDecodeError, OSError):
+                            pass
+
+                    sessions.append(
+                        SessionInfo(
+                            session_id=session_id,
+                            workspace=workspace,
+                            created=created or datetime.fromtimestamp(msg_stat.st_ctime),
+                            modified=datetime.fromtimestamp(msg_stat.st_mtime),
+                            source=Source.IDE,
+                        )
+                    )
+                except OSError as e:
+                    logger.debug(f"Could not process session dir {session_dir}: {e}")
+
+    return sessions
+
+
+def _load_kiro_session_messages(session: SessionInfo) -> list[IndexedMessage]:
+    """Load messages from a Kiro 1.0 session (messages.jsonl format).
+
+    Extracts:
+    - user messages (payload.type == "user")
+    - assistant messages (payload.type == "assistant")
+    - tool context summaries from tool_call/tool_result pairs
+
+    Skips: session_start, session_metadata, session_event, turn_start,
+    turn_end, usage_summary, pending_interaction, interaction_resolved,
+    tombstone, steering_inclusion, sub_agent_start, sub_agent_complete.
+    """
+    # Find the messages file
+    messages_file = _find_kiro_session_messages_file(session.session_id)
+    if not messages_file:
+        return []
+
+    messages = []
+    pending_tool_calls: dict[str, dict] = {}  # toolCallId -> tool_call payload
+    msg_idx = 0
+
+    config = ToolSummaryConfig(
+        excluded_tools=[],
+        max_summary_length=800,
+        include_meaningful_output=True,
+    )
+
+    try:
+        with open(messages_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                payload = msg.get("payload", {})
+                msg_type = payload.get("type")
+                timestamp_str = msg.get("timestamp")
+                timestamp = _parse_timestamp(timestamp_str) or session.modified or datetime.now()
+                msg_id = msg.get("id", f"{session.session_id}-{msg_idx}")
+
+                if msg_type == "user":
+                    content = payload.get("content", "")
+                    if not content or not content.strip():
+                        continue
+                    # Apply code block replacement
+                    text = _replace_code_blocks(content)
+                    # Apply skip check (shouldn't match in new format, but keep for safety)
+                    if _should_skip_message("user", text):
+                        continue
+                    messages.append(
+                        IndexedMessage(
+                            uuid=msg_id,
+                            session_id=session.session_id,
+                            workspace=session.workspace,
+                            timestamp=timestamp,
+                            role="user",
+                            searchable_text=text,
+                            message_index=msg_idx,
+                            source=Source.IDE,
+                        )
+                    )
+                    msg_idx += 1
+
+                elif msg_type == "assistant":
+                    content = payload.get("content", "")
+                    if not content or not content.strip():
+                        continue
+                    # Apply code block replacement
+                    text = _replace_code_blocks(content)
+                    messages.append(
+                        IndexedMessage(
+                            uuid=msg_id,
+                            session_id=session.session_id,
+                            workspace=session.workspace,
+                            timestamp=timestamp,
+                            role="assistant",
+                            searchable_text=text,
+                            message_index=msg_idx,
+                            source=Source.IDE,
+                        )
+                    )
+                    msg_idx += 1
+
+                elif msg_type == "tool_call":
+                    # Buffer tool calls to pair with results
+                    tool_call_id = payload.get("toolCallId", "")
+                    if tool_call_id:
+                        pending_tool_calls[tool_call_id] = payload
+
+                elif msg_type == "tool_result":
+                    # Match with pending tool call to generate summary
+                    tool_call_id = payload.get("toolCallId", "")
+                    tool_call = pending_tool_calls.pop(tool_call_id, None)
+                    if tool_call:
+                        summary = _generate_kiro_tool_summary(
+                            tool_call, payload, config
+                        )
+                        if summary:
+                            messages.append(
+                                IndexedMessage(
+                                    uuid=f"{msg_id}-tool-ctx",
+                                    session_id=session.session_id,
+                                    workspace=session.workspace,
+                                    timestamp=timestamp,
+                                    role="assistant",
+                                    searchable_text=summary,
+                                    message_index=msg_idx,
+                                    source=Source.IDE,
+                                    content_tier=ContentTier.TOOL_CONTEXT,
+                                    tool_name=tool_call.get("toolName"),
+                                )
+                            )
+                            msg_idx += 1
+
+                # All other types (session_start, session_metadata, turn_start,
+                # turn_end, usage_summary, session_event, pending_interaction,
+                # interaction_resolved, tombstone, steering_inclusion,
+                # sub_agent_start, sub_agent_complete) are skipped.
+
+    except OSError as e:
+        logger.warning(f"Error loading Kiro session {session.session_id}: {e}")
+
+    return messages
+
+
+def _find_kiro_session_messages_file(session_id: str) -> Path | None:
+    """Find the messages.jsonl file for a Kiro 1.0 session by session_id.
+
+    Searches all workspace directories under ~/.kiro/sessions/ for the
+    given session_id directory.
+    """
+    for sessions_base in _get_kiro_sessions_dirs():
+        for workspace_dir in sessions_base.iterdir():
+            if not workspace_dir.is_dir():
+                continue
+            candidate = workspace_dir / session_id / "messages.jsonl"
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _generate_kiro_tool_summary(
+    tool_call: dict, tool_result: dict, config: ToolSummaryConfig
+) -> str | None:
+    """Generate a tool context summary from a Kiro 1.0 tool_call/tool_result pair.
+
+    Adapts the inline JSONL tool format to work with the existing summary
+    generation pattern.
+    """
+    tool_name = tool_call.get("toolName", "")
+    action_type = tool_call.get("actionType", tool_name)
+
+    # Skip excluded tools
+    if action_type in config.excluded_tools or tool_name in config.excluded_tools:
+        return None
+
+    # Build description from tool args
+    args = tool_call.get("args", {})
+    # Remove internal _meta from args
+    args = {k: v for k, v in args.items() if k != "_meta"}
+
+    description = _describe_kiro_tool_call(tool_name, args)
+
+    # Build outcome from result
+    success = tool_result.get("success", True)
+    outcome = "completed" if success else "failed"
+
+    summary = f"[{action_type}] {description} → {outcome}"
+
+    # Extract meaningful output from result content
+    if config.include_meaningful_output:
+        result_content = tool_result.get("content", "")
+        meaningful = _extract_meaningful_from_result(result_content)
+        if meaningful:
+            summary = f"{summary}\n{meaningful}"
+        else:
+            summary = f"{summary}\n(no meaningful output)"
+
+    # Enforce max length
+    if len(summary) > config.max_summary_length:
+        summary = summary[: config.max_summary_length - 3] + "..."
+
+    return summary
+
+
+def _describe_kiro_tool_call(tool_name: str, args: dict) -> str:
+    """Generate a compact description for a Kiro 1.0 tool call."""
+    try:
+        if tool_name in ("readFile", "readFiles", "read_file", "read_files"):
+            path = args.get("path", "")
+            paths = args.get("paths", [])
+            if path:
+                return path
+            if paths:
+                return ", ".join(paths[:3]) + ("..." if len(paths) > 3 else "")
+            # Try files array format
+            files = args.get("files", [])
+            if files:
+                file_paths = [f.get("path", "") for f in files if isinstance(f, dict)]
+                return ", ".join(file_paths[:3]) + ("..." if len(file_paths) > 3 else "")
+            return "(unknown path)"
+
+        if tool_name in ("writeFile", "fs_write", "str_replace", "fs_append"):
+            path = args.get("path", args.get("targetFile", ""))
+            return path or "(unknown path)"
+
+        if tool_name in ("grep_search", "file_search"):
+            query = args.get("query", "")
+            return f'query="{query}"' if query else "(no query)"
+
+        if tool_name in ("execute_bash", "runCommand", "execute_pwsh"):
+            command = args.get("command", "")
+            if len(command) > 100:
+                command = command[:97] + "..."
+            return command
+
+        if tool_name == "invoke_sub_agent":
+            agent_name = args.get("name", "unknown")
+            prompt = args.get("prompt", "")
+            if len(prompt) > 100:
+                prompt = prompt[:97] + "..."
+            return f'{agent_name}: "{prompt}"'
+
+        if tool_name == "update_session_information":
+            title = args.get("title", "")
+            desc = args.get("description", "")
+            return f'title="{title}" desc="{desc[:80]}"' if title or desc else "(update)"
+
+        # Generic: JSON-serialize the args (truncated)
+        serialized = json.dumps(args, ensure_ascii=False)
+        if len(serialized) > 100:
+            serialized = serialized[:97] + "..."
+        return serialized
+
+    except (TypeError, ValueError):
+        return ""
+
+
+def _extract_meaningful_from_result(content: str) -> str:
+    """Extract meaningful output from a Kiro tool result content string.
+
+    Tool results in JSONL format have content as a string (often JSON-encoded).
+    We extract a useful excerpt if it contains error/diagnostic info.
+    """
+    if not content or not isinstance(content, str):
+        return ""
+
+    # Content is often double-JSON-encoded (a JSON string containing JSON)
+    # Try to extract the actual text
+    text = content
+    if text.startswith('{"response":'):
+        try:
+            parsed = json.loads(text)
+            text = parsed.get("response", text)
+            # May be double-encoded
+            if isinstance(text, str) and text.startswith("{"):
+                try:
+                    text = json.loads(text)
+                    text = json.dumps(text, indent=2)
+                except:
+                    pass
+        except:
+            pass
+
+    # Check if content looks meaningful (has error/diagnostic keywords)
+    meaningful_indicators = [
+        "error", "Error", "ERROR", "fail", "FAIL", "warning", "Warning",
+        "WARN", "traceback", "Traceback", "exception", "Exception",
+        "PASSED", "FAILED", "passed", "failed", "assert",
+    ]
+
+    if any(indicator in text for indicator in meaningful_indicators):
+        if len(text) > 500:
+            text = text[:497] + "..."
+        return text
+
+    return ""
 
 
 def _get_execution_log_dirs() -> list[Path]:
@@ -1062,16 +1440,37 @@ def _load_workspace_session_messages(session: SessionInfo) -> list[IndexedMessag
 
 
 def list_ide_sessions() -> list[SessionInfo]:
-    """List all IDE sessions from both legacy and current formats."""
-    sessions = []
-    sessions.extend(_list_legacy_sessions())
-    sessions.extend(_list_workspace_sessions())
-    return sessions
+    """List all IDE sessions from legacy, workspace-sessions, and Kiro 1.0 formats.
+
+    Deduplicates sessions that exist in multiple locations, preferring the
+    Kiro 1.0 format (richest data, most recent) over workspace-sessions over legacy.
+    """
+    # Collect sessions from all sources, with Kiro 1.0 last so it wins on dedup
+    sessions_by_id: dict[str, SessionInfo] = {}
+
+    for session in _list_legacy_sessions():
+        sessions_by_id[session.session_id] = session
+
+    for session in _list_workspace_sessions():
+        sessions_by_id[session.session_id] = session
+
+    for session in _list_kiro_sessions():
+        sessions_by_id[session.session_id] = session
+
+    return list(sessions_by_id.values())
 
 
 def load_ide_session_messages(session: SessionInfo) -> list[IndexedMessage]:
-    """Load messages for a session, trying both formats."""
-    # Try workspace-sessions format first (check if file exists there)
+    """Load messages for a session, trying all formats.
+
+    Priority: Kiro 1.0 (richest data) > workspace-sessions > legacy .chat
+    """
+    # Try Kiro 1.0 format first (has full assistant responses inline)
+    messages_file = _find_kiro_session_messages_file(session.session_id)
+    if messages_file:
+        return _load_kiro_session_messages(session)
+
+    # Try workspace-sessions format
     for ws_dir in _get_workspace_sessions_dirs():
         for workspace_dir in ws_dir.iterdir():
             if not workspace_dir.is_dir():

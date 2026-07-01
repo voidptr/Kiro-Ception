@@ -37,7 +37,7 @@ def mock_client():
     }
     client.get_config.return_value = {
         "instance": {"role": "engine", "pid": 12345, "port": 19742},
-        "version": {"kiro_ception": "1.0.8"},
+        "version": {"kiro_ception": "1.0.9"},
         "embedding": {"backend": "sentence-transformers", "model": "all-MiniLM-L6-v2"},
         "server": {"engine_port": 19742, "listen_address": "127.0.0.1:19742"},
         "cache": {"embedding_count": 1000, "message_count": 2000, "indexed_sessions": 100},

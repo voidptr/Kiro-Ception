@@ -87,6 +87,18 @@ function renderStatus(d) {
   h += row('FTS enabled', d.fts_enabled ? 'Yes' : 'No');
   h += row('Search ready', d.search_ready ? 'Yes' : 'No');
   h += row('Search messages', d.search_message_count);
+  if (d.newest_message_at) {
+    const msgDate = new Date(d.newest_message_at.replace(' ', 'T'));
+    const ageMs = Date.now() - msgDate.getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    let label = d.newest_message_at;
+    if (ageDays >= 4) {
+      label = `<span style="color:#ef5350;font-weight:600" title="Indexing likely stalled — no new messages in ${Math.floor(ageDays)} days">⚠️ ${d.newest_message_at} (${Math.floor(ageDays)}d ago)</span>`;
+    } else if (ageDays >= 1) {
+      label = `<span style="color:#ffa726" title="No new messages in ${Math.floor(ageDays)} day(s) — indexing may be stalled or Kiro unused">⚡ ${d.newest_message_at} (${Math.floor(ageDays)}d ago)</span>`;
+    }
+    h += `<tr><td>Newest message</td><td>${label}</td></tr>`;
+  }
   if (d.last_error) h += row('Last error', d.last_error);
   if (d.last_completed_at) h += row('Last completed', d.last_completed_at);
   h += '</table>';

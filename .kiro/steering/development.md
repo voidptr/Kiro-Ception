@@ -89,6 +89,8 @@ tests/
 │   ├── legacy_session.chat            # Legacy .chat format fixture
 │   ├── workspace_session.json         # Workspace-sessions format fixture
 │   ├── execution_log.json             # Execution log format fixture
+│   ├── kiro_session.json              # Kiro 1.0 session metadata fixture
+│   ├── kiro_messages.jsonl            # Kiro 1.0 JSONL messages fixture
 │   └── sessions.json                  # Sessions metadata fixture
 ├── test_search_utils.py               # Pure functions: parse_date, deduplicate, context windows
 ├── test_config.py                     # Config loading, from_dict, diff_configs
@@ -97,6 +99,7 @@ tests/
 ├── test_ide_loader.py                 # Message filtering, code block replacement
 ├── test_embeddings.py                 # Backend factory, OpenAI-compatible with mocked HTTP
 ├── test_session_loading.py            # All session formats: legacy, workspace, exec logs, CLI
+├── test_kiro_sessions.py             # Kiro 1.0 session loader: discovery, loading, tool context, dedup
 ├── test_indexer.py                    # Full pipeline: index → search, SearchIndex, memory limits
 ├── test_engine.py                     # Engine coordination, file locks
 ├── test_engine_client.py              # Engine client: spawn, fingerprint, registry, retry

@@ -379,6 +379,25 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                         status["memory_limit_mb"] = None
                         status["memory_used_percent"] = None
 
+                    # Newest indexed message timestamp (displayed in local time)
+                    if indexer.cache:
+                        try:
+                            row = indexer.cache.conn.execute(
+                                "SELECT MAX(timestamp) FROM messages"
+                            ).fetchone()
+                            if row and row[0]:
+                                from datetime import datetime
+                                newest_ts = datetime.fromtimestamp(row[0])
+                                status["newest_message_at"] = newest_ts.strftime(
+                                    "%Y-%m-%d %I:%M:%S %p"
+                                )
+                            else:
+                                status["newest_message_at"] = None
+                        except Exception:
+                            status["newest_message_at"] = None
+                    else:
+                        status["newest_message_at"] = None
+
                     self._send_json(status)
 
                 elif self.path == "/config":

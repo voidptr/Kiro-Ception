@@ -1,6 +1,6 @@
 [project]
 name = "kiro-ception"
-version = "1.0.8"
+version = "1.0.9"
 description = "Semantic search across Kiro CLI and IDE conversation history"
 readme = "README.md"
 license = "MIT"

@@ -30,7 +30,7 @@ This is a Kiro MCP Power (kiro-ception) that provides semantic search across con
 | `cache.py` | SQLite cache: embeddings, message metadata, session state, execution index, FTS5 search |
 | `migrations.py` | Schema versioning and migrations (FTS5 index creation, future schema changes) |
 | `embeddings.py` | Backend abstraction: sentence-transformers or OpenAI-compatible API |
-| `ide_loader.py` | Loads IDE conversations (legacy .chat + workspace-sessions + execution logs) |
+| `ide_loader.py` | Loads IDE conversations (legacy .chat + workspace-sessions + Kiro 1.0 JSONL + execution logs) |
 | `cli_loader.py` | Loads CLI conversations from SQLite database |
 | `sessions.py` | Unified entry point combining CLI + IDE loaders |
 | `config.py` | TOML config loading, dataclasses, hot-reload support |
@@ -96,3 +96,37 @@ On engine initialization:
 - **search.py extraction**: SearchIndex and all search logic live in `search.py`, keeping `server.py` focused solely on MCP tool proxy definitions
 - **Peer federation via HTTP fan-out**: Each machine maintains its own index. Peers are queried in parallel and results are merged by score. No shared state, no sync conflicts.
 - **Optional AES-256-GCM encryption for peers**: Key derived via Argon2id (memory-hard KDF). Both peers derive the same key from the same passphrase independently — no key exchange protocol needed. Crypto functions live directly in `peers.py` (no separate module).
+
+### Session Formats (IDE)
+
+The `ide_loader.py` module handles three distinct IDE session formats, plus execution logs:
+
+**Kiro 1.0 (current, primary)**
+- Location: `~/.kiro/sessions/<sha256_prefix>/<session_id>/`
+- Files: `session.json` (metadata) + `messages.jsonl` (conversation stream)
+- Directory naming: first 16 hex chars of `SHA256(workspace_path)`
+- Messages are JSONL with `payload.type` field: `user`, `assistant`, `tool_call`, `tool_result`, plus system types we skip
+- Full assistant responses stored inline (no execution log fallback needed)
+- Tool calls and results are interleaved in the stream as paired messages
+- Timestamps: ISO 8601 strings (e.g., `"2026-07-01T01:46:43.643Z"`)
+- Session IDs prefixed with `sess_` (e.g., `sess_22a9402b-...`)
+
+**Workspace-sessions (pre-1.0, deprecated)**
+- Location: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/<base64_path>/<uuid>.json`
+- Directory naming: base64url-encoded workspace paths
+- Single JSON file per session with `history` array
+- Assistant responses are stubs ("On it.") — real responses reconstructed from execution logs
+- Timestamps: epoch milliseconds
+
+**Legacy .chat**
+- Location: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/<uuid>.chat`
+- Single JSON file with `chat` array containing full conversation
+- Oldest format, no longer produced by Kiro
+
+**Execution logs (pre-1.0 supplement)**
+- Location: `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/414d1636299d2b9e4ce7e17fb11f63e9/<exec_id>`
+- Contains assistant responses (actionType="say") and tool actions
+- Used to replace stub messages in workspace-sessions format
+- Not needed for Kiro 1.0 format (full responses are inline)
+
+**Deduplication**: When the same session_id exists in multiple formats (due to migration), the loader prefers Kiro 1.0 > workspace-sessions > legacy.

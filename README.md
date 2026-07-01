@@ -349,6 +349,20 @@ For information about where your data is being kept, call the MCP tool "get_conf
 
 The cache DB filename includes a hash of the backend configuration. Changing model/backend/dimensions creates a new DB file (old ones are preserved for rollback).
 
+### Session Data Sources (macOS)
+
+Kiro Ception auto-discovers and indexes conversations from three IDE formats plus the CLI:
+
+| Format | Location (macOS) | Notes |
+|--------|-----------------|-------|
+| **Kiro 1.0 (current)** | `~/.kiro/sessions/<sha256_prefix>/<session_id>/messages.jsonl` | Primary format since Kiro IDE 1.0. Each session has `session.json` (metadata) + `messages.jsonl` (JSONL stream). Full assistant responses stored inline alongside tool calls. Directory names are the first 16 hex chars of SHA256(workspace_path). |
+| **Workspace-sessions (pre-1.0)** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/<base64_path>/<uuid>.json` | Older format where sessions were JSON files with a `history` array. Directory names are base64url-encoded workspace paths. Assistant responses were stubs ("On it.") — real responses came from execution logs. |
+| **Legacy .chat** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/<uuid>.chat` | Earliest format. Full conversations in a single JSON file with `chat` array. |
+| **Execution logs (pre-1.0)** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/414d1636299d2b9e4ce7e17fb11f63e9/<exec_id>` | Separate files containing assistant responses (actionType="say") and tool actions. Used to reconstruct full conversations for workspace-sessions format. |
+| **CLI** | `~/.kiro/cli/conversations.db` | SQLite database with `conversations_v2` table. Indexed automatically. |
+
+When the same session exists in multiple formats (e.g., migrated from workspace-sessions to Kiro 1.0), deduplication ensures it is only indexed once, preferring the richest format (Kiro 1.0 > workspace-sessions > legacy).
+
 **Privacy:** All data is processed and stored locally on your machine. No telemetry, no external API calls, and no data leaves your device; unless you explicitly configure a third-party embedding provider (e.g., OpenAI). The default configuration uses fully local, offline embeddings.
 
 ## Contributing
