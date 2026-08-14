@@ -1,0 +1,76 @@
+# claude-rearview — isolated instance config
+#
+# This runs the Claude-Code-aware fork ALONGSIDE an existing Kiro-Ception
+# instance without either clobbering the other. Three things must be unique
+# per instance; all three are set below:
+#
+#   1. cache_dir    — owns the embedding DB, engine.lock, engine.json, engine.log
+#   2. engine_port  — only one process may bind it
+#   3. the config file itself — pass this file via --config
+#
+# Register it with a distinct MCP server key, e.g. "claude-rearview":
+#
+#   "claude-rearview": {
+#     "type": "stdio",
+#     "command": "C:/Users/<you>/.local/bin/uv.exe",
+#     "args": [
+#       "run", "--directory", "<path-to>/claude-rearview",
+#       "kiro-ception",
+#       "--config", "<path-to>/claude-rearview/config.claude-rearview.toml"
+#     ]
+#   }
+
+[sources.claude]
+enabled = true
+roots = [
+    "~/.claude/projects",
+    "~/.config/claude/projects",
+]
+include_subagents = true
+include_sidechains = true
+include_thinking = false
+include_tool_context = true
+
+# Kiro sources stay on — this instance indexes everything in one place.
+# Set enabled = false on either if you'd rather keep them to the other instance.
+[sources.cli]
+enabled = true
+
+[sources.ide]
+enabled = true
+
+[embedding]
+backend = "sentence-transformers"
+model = "all-MiniLM-L6-v2"
+
+# ISOLATION KEY #1 — separate cache directory.
+# Owns cache_<fingerprint>.db, engine.lock, engine.json, and (via
+# engine_log_file = "auto") engine.log. Nothing here is shared with any
+# other instance.
+cache_dir = "~/.cache/claude-rearview"
+
+[server]
+# ISOLATION KEY #2 — separate port.
+# In use on this machine at time of writing: 19742, 19760.
+engine_port = 19761
+
+# "auto" resolves to <cache_dir>/engine.log — do not point this at another
+# instance's directory.
+engine_log_file = "auto"
+
+[search]
+default_threshold = 0.2
+default_max_results = 10
+default_context_window = 3
+recency_floor = 0.85
+
+[indexing]
+throttle_ms = 0
+rescan_interval_minutes = 10
+
+[memory]
+fraction = 0.33
+
+[peers]
+enabled = false
+nodes = []

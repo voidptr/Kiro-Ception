@@ -182,18 +182,42 @@ The `source` parameter on `search_global_history` accepts `"claude"` alongside `
 
 ### Running Alongside Upstream Kiro-Ception
 
-This fork is a full instance, not a plugin — if you already run upstream Kiro-Ception, give this one its own cache and port so the two do not collide:
+This fork is a full instance, not a plugin. It is built to run **concurrently** with an existing Kiro-Ception without either one clobbering the other. A ready-to-use isolated config ships in the repo: [`config.claude-rearview.toml`](config.claude-rearview.toml).
+
+Exactly three things must be unique per instance:
+
+| # | Setting | Owns |
+|---|---------|------|
+| 1 | `embedding.cache_dir` | The embedding DB (`cache_<fingerprint>.db`), `engine.lock`, `engine.json`, and `engine.log` |
+| 2 | `server.engine_port` | The localhost port the engine binds; only one process can hold it |
+| 3 | The config file itself | Passed with `--config`; also register the MCP server under a distinct key |
 
 ```toml
 [embedding]
-cache_dir = "~/.cache/claude-rearview"
+cache_dir = "~/.cache/claude-rearview"   # isolation key #1
 
 [server]
-engine_port = 19743
-engine_log_file = "~/.cache/claude-rearview/engine.log"
+engine_port = 19761                      # isolation key #2
+engine_log_file = "auto"                 # -> <cache_dir>/engine.log
 ```
 
-Point the MCP entry at this clone with `--config <that file>`. Each unique `cache_dir` provides full instance isolation (separate embedding DB, engine lock, and engine info file).
+Register it under its own MCP server key so it sits beside your existing entry rather than replacing it:
+
+```json
+"claude-rearview": {
+  "type": "stdio",
+  "command": "/path/to/uv",
+  "args": [
+    "run", "--directory", "/path/to/claude-rearview",
+    "kiro-ception",
+    "--config", "/path/to/claude-rearview/config.claude-rearview.toml"
+  ]
+}
+```
+
+Verify isolation at any time by calling `get_config` (or opening the dashboard at `http://127.0.0.1:<engine_port>/`) and checking that every entry under `paths` points inside your intended `cache_dir`.
+
+> **`engine_log_file` defaults to `"auto"`**, which resolves to `<cache_dir>/engine.log`. Earlier versions hardcoded `~/.cache/kiro-ception/engine.log`, so an instance with a custom `cache_dir` still wrote its log into the default instance's directory — two instances silently sharing one log file. Set an explicit path to override, or `""` to disable file logging.
 
 Alternatively, run only this fork — it indexes everything upstream does, plus Claude Code.
 
