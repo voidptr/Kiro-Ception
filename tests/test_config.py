@@ -16,6 +16,55 @@ from kiro_ception.config import (
 )
 
 
+# --- Config.engine_log_path ---
+
+
+class TestEngineLogPath:
+    """The engine log must live inside the instance's own cache_dir.
+
+    Every other instance-local artifact (embedding DB, engine.lock,
+    engine.json) already derives from cache_dir. The log did not, so two
+    instances with distinct cache_dirs still shared a single log file.
+    """
+
+    def test_auto_is_the_default(self):
+        assert Config().server.engine_log_file == "auto"
+
+    def test_auto_follows_cache_dir(self):
+        config = Config(embedding=EmbeddingConfig(cache_dir="/tmp/instance-a"))
+        assert config.engine_log_path.name == "engine.log"
+        assert config.engine_log_path.parent == expand_path("/tmp/instance-a")
+
+    def test_distinct_cache_dirs_yield_distinct_logs(self):
+        a = Config(embedding=EmbeddingConfig(cache_dir="/tmp/instance-a"))
+        b = Config(embedding=EmbeddingConfig(cache_dir="/tmp/instance-b"))
+        assert a.engine_log_path != b.engine_log_path
+
+    def test_empty_string_disables_logging(self):
+        config = Config(server=ServerConfig(engine_log_file=""))
+        assert config.engine_log_path is None
+
+    def test_whitespace_only_disables_logging(self):
+        config = Config(server=ServerConfig(engine_log_file="   "))
+        assert config.engine_log_path is None
+
+    def test_explicit_path_is_honored(self):
+        config = Config(server=ServerConfig(engine_log_file="~/custom/e.log"))
+        assert config.engine_log_path == expand_path("~/custom/e.log")
+
+    def test_isolated_instance_resolves_from_toml(self):
+        config = Config.from_dict(
+            {
+                "embedding": {"cache_dir": "~/.cache/claude-rearview"},
+                "server": {"engine_port": 19761, "engine_log_file": "auto"},
+            }
+        )
+        assert config.server.engine_port == 19761
+        assert config.engine_log_path == expand_path(
+            "~/.cache/claude-rearview/engine.log"
+        )
+
+
 # --- expand_path ---
 
 

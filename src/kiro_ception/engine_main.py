@@ -479,8 +479,8 @@ def main():
         bind_address = "127.0.0.1"
 
     # Configure output — redirect stdout/stderr to file if configured
-    if config.server.engine_log_file:
-        log_path = expand_path(config.server.engine_log_file)
+    log_path = config.engine_log_path
+    if log_path:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_fh = open(log_path, "a", encoding="utf-8")
         sys.stdout = log_fh
@@ -543,6 +543,8 @@ def main():
                 "cache_database": str(indexer.cache.db_path) if indexer.cache else "not initialized",
                 "engine_lock": str(lock_path),
                 "engine_info": str(cache_dir / "engine.json"),
+                "engine_log": str(current_config.engine_log_path)
+                if current_config.engine_log_path else "disabled",
             },
             "sources": {
                 "cli": {
@@ -722,10 +724,19 @@ if __name__ == "__main__":
             f"{_tb.format_exc()}\n"
             f"{'='*60}\n"
         )
-        # Try to write to the log file even if stdout redirection failed
+        # Try to write to the log file even if stdout redirection failed.
+        # Resolve through config so the crash lands in THIS instance's cache
+        # directory rather than a hardcoded shared path.
         try:
             from pathlib import Path as _Path
-            crash_log = _Path("~/.cache/kiro-ception/engine.log").expanduser()
+
+            try:
+                from .config import get_config as _get_config
+                crash_log = _get_config().engine_log_path
+            except Exception:
+                crash_log = None
+            if crash_log is None:
+                crash_log = _Path("~/.cache/kiro-ception/engine.log").expanduser()
             crash_log.parent.mkdir(parents=True, exist_ok=True)
             with open(crash_log, "a", encoding="utf-8") as f:
                 f.write(crash_msg)

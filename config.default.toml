@@ -134,6 +134,14 @@ engine_port = 19742
 # detect a dead engine and self-promote. Engine uses it to refresh its heartbeat.
 heartbeat_interval_seconds = 30
 
+# Where the engine writes its log.
+#   "auto"  (default) -> <cache_dir>/engine.log, so each instance logs into its
+#                        own cache directory and concurrent instances never
+#                        share a log file
+#   ""                -> disable file logging entirely
+#   "<path>"          -> an explicit path
+# engine_log_file = "auto"
+
 [peers]
 # Cross-machine peer federation (disabled by default)
 # When enabled, search queries are fanned out to remote kiro-ception instances
