@@ -65,12 +65,15 @@ def _get_current_workspace() -> str | None:
     Priority:
     1. Config file: search.workspace_dir (if set)
     2. Environment: KIRO_WORKSPACE (set by Kiro IDE/CLI)
-    3. Current working directory (PWD or cwd)
+    3. Environment: CLAUDE_PROJECT_DIR (set by Claude Code)
+    4. Current working directory (PWD or cwd)
     """
     config = _get_config()
     if config.search.workspace_dir:
         return str(expand_path(config.search.workspace_dir))
     if val := os.environ.get("KIRO_WORKSPACE"):
+        return val
+    if val := os.environ.get("CLAUDE_PROJECT_DIR"):
         return val
     return os.environ.get("PWD") or str(Path.cwd())
 
@@ -159,9 +162,10 @@ def search_global_history(
         threshold: Minimum similarity 0-1 (default: 0.2)
         max_results: Maximum results to return (default: 10)
         offset: Skip results for pagination (default: 0)
-        source: Filter by conversation source. Options: "all" (default), "cli", "ide".
-                Only set to "cli" or "ide" if the user explicitly asks to search
-                only CLI or only IDE conversations. Otherwise leave as "all".
+        source: Filter by conversation source. Options: "all" (default), "cli",
+                "ide", "claude". Only narrow the source if the user explicitly
+                asks to search only Kiro CLI, only Kiro IDE, or only Claude Code
+                conversations. Otherwise leave as "all".
         include_tool_context: Also search tool call summaries (default: false).
                 When false, only conversation messages (user prompts and assistant
                 responses) are matched. When true, tool context summaries are
@@ -171,11 +175,7 @@ def search_global_history(
         Search results with matched messages, scores, workspace, context, pagination
     """
     _ensure_initialized()
-    source_filter = None
-    if source == "cli":
-        source_filter = "cli"
-    elif source == "ide":
-        source_filter = "ide"
+    source_filter = source if source in ("cli", "ide", "claude") else None
 
     client = get_engine_client()
     return client.search({
@@ -315,7 +315,7 @@ if _startup_config.peers.enabled and _startup_config.peers.debug_tool_enabled:
             threshold: Minimum similarity 0-1 (default: 0.2)
             max_results: Maximum results to return (default: 10)
             offset: Skip results for pagination (default: 0)
-            source: Filter by source — "all" (default), "cli", or "ide"
+            source: Filter by source — "all" (default), "cli", "ide", or "claude"
 
         Returns:
             Search results from peer machines only (local index is not searched)
@@ -325,10 +325,8 @@ if _startup_config.peers.enabled and _startup_config.peers.debug_tool_enabled:
         from .peers import fan_out_search
 
         source_filter = None
-        if source == "cli":
-            source_filter = Source.CLI
-        elif source == "ide":
-            source_filter = Source.IDE
+        if source in ("cli", "ide", "claude"):
+            source_filter = Source(source)
 
         peer_request = {
             "query": query,

@@ -1,12 +1,12 @@
 [project]
 name = "kiro-ception"
 version = "1.0.9"
-description = "Semantic search across Kiro CLI and IDE conversation history"
+description = "Semantic search across Kiro CLI, Kiro IDE, and Claude Code conversation history"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Farley Farley" }]
-keywords = ["kiro", "mcp", "semantic-search", "conversation-history"]
+keywords = ["kiro", "claude", "claude-code", "mcp", "semantic-search", "conversation-history"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

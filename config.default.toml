@@ -19,6 +19,34 @@ patterns = [
     "~/AppData/Roaming/Kiro/User/globalStorage/kiro.kiroagent/*/*.chat",
 ]
 
+[sources.claude]
+# Claude Code conversation transcripts.
+# Claude Code writes one JSONL transcript per session under
+#   <root>/<encoded-workspace>/<session-uuid>.jsonl
+enabled = true
+
+# Every root below that exists is scanned (unlike cli/ide, which are
+# first-match-wins), so multiple Claude installations can be indexed together.
+roots = [
+    "~/.claude/projects",
+    "~/.config/claude/projects",
+]
+
+# Index subagent transcripts (<session-id>/subagents/*.jsonl) as sessions of
+# their own. These hold work the main transcript only references by tool call.
+include_subagents = true
+
+# Index sidechain records — subagent turns inlined into the main transcript.
+include_sidechains = true
+
+# Index extended thinking blocks. Valuable for "why did we do it that way"
+# questions, but verbose: expect a noticeably larger index. Off by default.
+include_thinking = false
+
+# Condense tool_use/tool_result pairs into tool-context summaries. These are
+# only matched when a search passes include_tool_context = true.
+include_tool_context = true
+
 [embedding]
 # Backend: "sentence-transformers" (default, local) or "openai-compatible" (Ollama, LM Studio, OpenAI, etc.)
 backend = "sentence-transformers"

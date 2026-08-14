@@ -479,7 +479,7 @@ class TestCLILoading:
 
 class TestLoaderFacade:
     def test_list_all_sessions_combines_sources(self, tmp_path):
-        """list_all_sessions combines CLI and IDE sources."""
+        """list_all_sessions combines CLI, IDE, and Claude sources."""
         from kiro_ception.config import Config
         from kiro_ception.sessions import list_all_sessions
 
@@ -493,27 +493,43 @@ class TestLoaderFacade:
             created=datetime(2026, 6, 3), modified=datetime(2026, 6, 4),
             source=Source.CLI,
         )
+        claude_session = SessionInfo(
+            session_id="claude-1", workspace="/project",
+            created=datetime(2026, 6, 5), modified=datetime(2026, 6, 6),
+            source=Source.CLAUDE,
+        )
 
         with (
             patch("kiro_ception.sessions.get_config", return_value=Config()),
             patch("kiro_ception.sessions.list_ide_sessions", return_value=[ide_session]),
             patch("kiro_ception.sessions.list_cli_sessions", return_value=[cli_session]),
+            patch(
+                "kiro_ception.sessions.list_claude_sessions",
+                return_value=[claude_session],
+            ),
         ):
             sessions = list_all_sessions()
 
-        assert len(sessions) == 2
+        assert len(sessions) == 3
         # Should be sorted newest first
-        assert sessions[0].session_id == "cli-1"  # newer
-        assert sessions[1].session_id == "ide-1"
+        assert sessions[0].session_id == "claude-1"  # newest
+        assert sessions[1].session_id == "cli-1"
+        assert sessions[2].session_id == "ide-1"
 
     def test_list_all_sessions_respects_enabled_flags(self, tmp_path):
         """Disabled sources are not queried."""
-        from kiro_ception.config import CLISourceConfig, Config, IDESourceConfig
+        from kiro_ception.config import (
+            ClaudeSourceConfig,
+            CLISourceConfig,
+            Config,
+            IDESourceConfig,
+        )
         from kiro_ception.sessions import list_all_sessions
 
         config = Config(
             cli=CLISourceConfig(enabled=False),
             ide=IDESourceConfig(enabled=True),
+            claude=ClaudeSourceConfig(enabled=False),
         )
 
         ide_session = SessionInfo(
@@ -526,12 +542,29 @@ class TestLoaderFacade:
             patch("kiro_ception.sessions.get_config", return_value=config),
             patch("kiro_ception.sessions.list_ide_sessions", return_value=[ide_session]),
             patch("kiro_ception.sessions.list_cli_sessions") as mock_cli,
+            patch("kiro_ception.sessions.list_claude_sessions") as mock_claude,
         ):
             sessions = list_all_sessions()
 
-        # CLI should not be called since it's disabled
+        # Disabled sources should not be queried
         mock_cli.assert_not_called()
+        mock_claude.assert_not_called()
         assert len(sessions) == 1
+
+    def test_load_session_messages_routes_to_claude_loader(self):
+        """Claude-sourced sessions are dispatched to the Claude loader."""
+        from kiro_ception.sessions import load_session_messages
+
+        claude_session = SessionInfo(
+            session_id="claude-1", workspace="/project", source=Source.CLAUDE
+        )
+
+        with patch(
+            "kiro_ception.sessions.load_claude_session_messages", return_value=[]
+        ) as mock_load:
+            load_session_messages(claude_session)
+
+        mock_load.assert_called_once_with(claude_session)
 
 
 # --- Memory limit / get_memory_limit ---

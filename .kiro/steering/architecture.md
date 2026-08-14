@@ -32,7 +32,8 @@ This is a Kiro MCP Power (kiro-ception) that provides semantic search across con
 | `embeddings.py` | Backend abstraction: sentence-transformers or OpenAI-compatible API |
 | `ide_loader.py` | Loads IDE conversations (legacy .chat + workspace-sessions + Kiro 1.0 JSONL + execution logs) |
 | `cli_loader.py` | Loads CLI conversations from SQLite database |
-| `sessions.py` | Unified entry point combining CLI + IDE loaders |
+| `claude_loader.py` | Loads Claude Code conversations (per-session JSONL transcripts + subagent transcripts) |
+| `sessions.py` | Unified entry point combining CLI + IDE + Claude loaders |
 | `config.py` | TOML config loading, dataclasses, hot-reload support |
 | `memory.py` | Memory limit utilities (get_memory_limit, select_sessions_within_limit) |
 | `models.py` | Pydantic data models (IndexedMessage, SessionInfo) |
@@ -130,3 +131,26 @@ The `ide_loader.py` module handles three distinct IDE session formats, plus exec
 - Not needed for Kiro 1.0 format (full responses are inline)
 
 **Deduplication**: When the same session_id exists in multiple formats (due to migration), the loader prefers Kiro 1.0 > workspace-sessions > legacy.
+
+### Session Formats (Claude Code)
+
+The `claude_loader.py` module handles Claude Code transcripts.
+
+**Claude Code JSONL**
+- Location: `~/.claude/projects/<encoded_workspace>/<session_uuid>.jsonl`
+- Subagents: `~/.claude/projects/<encoded_workspace>/<session_uuid>/subagents/<uuid>.jsonl`
+- Directory naming: lossy — every non-alphanumeric character in the workspace path becomes `-`, so it cannot be reliably reversed
+- Workspace resolution: read from the `cwd` field present on every conversational record; the decoded directory name is only a fallback
+- Records are JSONL with a top-level `type` discriminator; only `user` and `assistant` carry conversation
+- `message` follows the Anthropic Messages API shape: `content` is either a string or a list of typed blocks (`text`, `thinking`, `tool_use`, `tool_result`)
+- Tool calls pair across records: `tool_use` on an assistant record, answered by `tool_result` on the following user record, matched via `tool_use_id`
+- `toolUseResult` carries a richer structured form of the result, used as a fallback when the block content is empty
+- Timestamps: ISO 8601 strings (e.g., `"2026-08-11T00:38:04.704Z"`)
+- Skipped record types: `mode`, `ai-title`, `last-prompt`, `attachment`, `queue-operation`, `permission-mode`, `file-history-snapshot`, `file-history-delta`, `system`
+- Skipped content: records flagged `isMeta` (harness-injected pseudo-turns), slash-command echoes, and local command output; `<system-reminder>` blocks are stripped from otherwise-real user text rather than dropping the message
+
+**Session identity**: main transcripts use the filename stem (a UUID); subagent transcripts use `<parent_session>-sub-<uuid>` so they stay unique and traceable to their parent.
+
+**Path index**: `list_claude_sessions()` populates a module-level `session_id -> Path` map. `load_claude_session_messages()` resolves through it and rescans once if the id is missing, mirroring `_find_kiro_session_messages_file`.
+
+**Multiple roots**: unlike the CLI and IDE sources (first-match-wins), every configured Claude root that exists is scanned, so multiple installations index together.
