@@ -154,7 +154,10 @@ class ServerConfig:
     listen_address: str = ""  # Bind address ("" = auto: 0.0.0.0 if peers enabled, else 127.0.0.1)
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
-    engine_log_file: str = "~/.cache/kiro-ception/engine.log"  # Path to engine log file (empty = no file logging)
+    # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
+    # or an explicit path. "auto" keeps the log inside the instance's own
+    # cache directory so concurrent instances never share a log file.
+    engine_log_file: str = "auto"
 
 
 @dataclass
@@ -190,6 +193,22 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     tool_summaries: ToolSummariesConfig = field(default_factory=ToolSummariesConfig)
+
+    @property
+    def engine_log_path(self) -> Path | None:
+        """Resolve the engine log file path, or None if file logging is off.
+
+        "auto" (the default) places the log inside cache_dir, which is what
+        isolates concurrent instances from each other — every other
+        instance-local artifact (embedding DB, engine.lock, engine.json)
+        already derives from cache_dir.
+        """
+        setting = self.server.engine_log_file.strip()
+        if not setting:
+            return None
+        if setting == "auto":
+            return self.embedding.cache_path / "engine.log"
+        return expand_path(setting)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
