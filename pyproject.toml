@@ -16,7 +16,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "mcp>=1.26.0",
+    # Upper bound is required: mcp 2.0.0 removed mcp.server.fastmcp (the
+    # FastMCP entry point server.py imports) in favour of mcp.server.mcpserver.
+    # Without the bound, a fresh install resolves 2.x and fails at import time.
+    "mcp>=1.26.0,<2",
     "sentence-transformers>=2.2.0",
     "numpy>=1.24.0",
     "pydantic>=2.0",
