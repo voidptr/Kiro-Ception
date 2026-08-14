@@ -221,6 +221,40 @@ Verify isolation at any time by calling `get_config` (or opening the dashboard a
 
 Alternatively, run only this fork — it indexes everything upstream does, plus Claude Code.
 
+### Running as a Standalone Service
+
+Normally the engine is spawned on demand by an MCP proxy. To run an instance as a long-lived service in its own self-contained folder — independent of any editor — build a wheel and install it into a dedicated venv:
+
+```bash
+uv build                                    # -> dist/kiro_ception-<ver>-py3-none-any.whl
+
+# Pick a folder; everything this instance owns lives under it.
+ROOT=~/.local/share/claude-rearview         # Windows: %LOCALAPPDATA%\claude-rearview
+mkdir -p "$ROOT/cache"
+uv venv "$ROOT/.venv"
+uv pip install --python "$ROOT/.venv/bin/python" dist/kiro_ception-*.whl
+cp scripts/serve.py "$ROOT/serve.py"
+```
+
+Write `$ROOT/config.toml` with `cache_dir` pointing at `$ROOT/cache` and a unique `engine_port`, then start it:
+
+```bash
+"$ROOT/.venv/bin/python" "$ROOT/serve.py" --config "$ROOT/config.toml"
+```
+
+The result is one folder holding the venv, config, embedding DB, engine lock/info, and log — nothing shared with any other instance.
+
+**Why `serve.py` is needed.** The engine deliberately refuses to outlive its clients: it shuts down once every registered follower has died, or after 120 seconds if no follower ever registers (orphan protection). Launching `python -m kiro_ception.engine_main` directly therefore gives you an engine that exits two minutes later. `serve.py` is the missing follower — it spawns the engine and then health-checks on an interval, and since `EngineClient` stamps `X-Follower-PID` on every request, each check re-registers the supervisor. Stop the supervisor and the engine shuts down cleanly on its own.
+
+`--startup-timeout` (default 300s) covers cold starts: preloading torch and the embedding model can take minutes on some machines, well beyond the 30s that `ensure_engine_running()` waits internally.
+
+Verify at any time:
+
+```bash
+curl -s http://127.0.0.1:<engine_port>/status    # indexing progress, search readiness
+curl -s http://127.0.0.1:<engine_port>/config    # every instance-local path
+```
+
 ### Workspace Detection
 
 `search_project_history` scopes to the current workspace, resolved in this order:
