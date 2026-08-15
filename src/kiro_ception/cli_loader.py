@@ -18,7 +18,12 @@ def get_database_path() -> Path | None:
 
 
 def _parse_timestamp(ts: int | str | None) -> datetime | None:
-    """Parse timestamp from various formats."""
+    """Parse a timestamp into naive LOCAL time.
+
+    Mirrors ide_loader._parse_timestamp: offset-aware ISO 8601 strings are
+    converted to local before the tzinfo is dropped, so they line up with the
+    epoch values that `datetime.fromtimestamp` already returns as local.
+    """
     if ts is None:
         return None
     if isinstance(ts, int):
@@ -26,9 +31,12 @@ def _parse_timestamp(ts: int | str | None) -> datetime | None:
         return datetime.fromtimestamp(ts / 1000)
     if isinstance(ts, str):
         try:
-            return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except ValueError:
             return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
     return None
 
 

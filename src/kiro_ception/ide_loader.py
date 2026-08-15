@@ -88,16 +88,30 @@ def _replace_code_blocks(text: str) -> str:
 
 
 def _parse_timestamp(ts: int | str | None) -> datetime | None:
-    """Parse timestamp from various formats."""
+    """Parse a timestamp into naive LOCAL time.
+
+    Every consumer (recency boost, date filters, stored epochs) treats these
+    datetimes as local, which is what `datetime.fromtimestamp` already
+    produces for epoch values. ISO 8601 strings carrying an offset — Kiro 1.0
+    and Claude Code both emit "...Z" — must therefore be converted to local
+    *before* the tzinfo is dropped. Dropping it first would store the UTC
+    wall-clock reading as though it were local, shifting every such message
+    by the machine's UTC offset.
+
+    Strings without an offset are already local and are returned unchanged.
+    """
     if ts is None:
         return None
     if isinstance(ts, int):
         return datetime.fromtimestamp(ts / 1000)
     if isinstance(ts, str):
         try:
-            return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except ValueError:
             return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
     return None
 
 
