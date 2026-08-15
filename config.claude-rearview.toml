@@ -58,6 +58,11 @@ engine_port = 19761
 # instance's directory.
 engine_log_file = "auto"
 
+# ISOLATION KEY #3 (discoverability) — names this instance in the MCP server
+# name and in every tool description, so a caller looking at two identical
+# tool sets can tell which one indexes Claude Code.
+instance_label = "claude-rearview"
+
 [search]
 default_threshold = 0.2
 default_max_results = 10

@@ -189,6 +189,11 @@ class ServerConfig:
     listen_address: str = ""  # Bind address ("" = auto: 0.0.0.0 if peers enabled, else 127.0.0.1)
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
+    # Short name identifying this instance, surfaced in the MCP server name and
+    # appended to every tool description. Concurrent instances expose
+    # identically-named tools, so this is what tells callers them apart.
+    # Empty = unlabelled (upstream default).
+    instance_label: str = ""
     # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
     # or an explicit path. "auto" keeps the log inside the instance's own
     # cache directory so concurrent instances never share a log file.
@@ -215,6 +220,15 @@ class ToolSummariesConfig:
     include_meaningful_output: bool = True  # Whether to excerpt Meaningful_Results into summaries
 
 
+# Display names for each conversation source, in the order they appear in
+# instance summaries. Most-distinguishing source first.
+_SOURCE_LABELS: tuple[tuple[str, str], ...] = (
+    ("claude", "Claude Code"),
+    ("ide", "Kiro IDE"),
+    ("cli", "Kiro CLI"),
+)
+
+
 @dataclass
 class Config:
     """Main configuration."""
@@ -229,6 +243,31 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     tool_summaries: ToolSummariesConfig = field(default_factory=ToolSummariesConfig)
+
+    @property
+    def indexed_sources(self) -> list[str]:
+        """Display names of the conversation sources this instance indexes."""
+        enabled = {
+            "claude": self.claude.enabled,
+            "ide": self.ide.enabled,
+            "cli": self.cli.enabled,
+        }
+        return [label for key, label in _SOURCE_LABELS if enabled[key]]
+
+    @property
+    def instance_summary(self) -> str:
+        """One-line statement of what this instance indexes.
+
+        Appended to every MCP tool description. Concurrent instances expose
+        tools with identical names and identical docstrings, so without this
+        a caller has no way to tell which instance a tool belongs to.
+        """
+        sources = self.indexed_sources
+        body = ", ".join(sources) if sources else "nothing (all sources are disabled)"
+        label = self.server.instance_label.strip()
+        if label:
+            return f'Instance "{label}". Indexes: {body}.'
+        return f"Indexes: {body}."
 
     @property
     def engine_log_path(self) -> Path | None:
@@ -334,6 +373,8 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("memory.fraction", old.memory.fraction, new.memory.fraction),
         ("memory.limit_mb", old.memory.limit_mb, new.memory.limit_mb),
         ("server.engine_port", old.server.engine_port, new.server.engine_port),
+        # Applied to tool descriptions at import time — takes effect on restart.
+        ("server.instance_label", old.server.instance_label, new.server.instance_label),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.ide.enabled", old.ide.enabled, new.ide.enabled),
         ("sources.claude.enabled", old.claude.enabled, new.claude.enabled),

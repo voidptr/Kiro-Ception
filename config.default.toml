@@ -134,6 +134,14 @@ engine_port = 19742
 # detect a dead engine and self-promote. Engine uses it to refresh its heartbeat.
 heartbeat_interval_seconds = 30
 
+# Short name identifying this instance. When set, it becomes the MCP server
+# name and is quoted in every tool description, e.g.
+#   Instance "claude-rearview". Indexes: Claude Code, Kiro IDE, Kiro CLI.
+# Concurrent instances expose identical tool names, so this is what lets a
+# caller (and the agent) tell them apart. Applied at startup — restart to
+# pick up a change. Leave empty for a single-instance setup.
+# instance_label = "claude-rearview"
+
 # Where the engine writes its log.
 #   "auto"  (default) -> <cache_dir>/engine.log, so each instance logs into its
 #                        own cache directory and concurrent instances never

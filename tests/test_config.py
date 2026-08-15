@@ -16,6 +16,74 @@ from kiro_ception.config import (
 )
 
 
+# --- Instance identity ---
+
+
+class TestInstanceIdentity:
+    """Concurrent instances expose identical tool names, so every tool
+    description has to state which sources its instance indexes."""
+
+    def test_all_sources_listed_most_distinguishing_first(self):
+        assert Config().indexed_sources == ["Claude Code", "Kiro IDE", "Kiro CLI"]
+
+    def test_disabled_sources_omitted(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        config = Config(
+            claude=ClaudeSourceConfig(enabled=False),
+            cli=CLISourceConfig(enabled=False),
+        )
+        assert config.indexed_sources == ["Kiro IDE"]
+
+    def test_summary_without_label(self):
+        assert Config().instance_summary == (
+            "Indexes: Claude Code, Kiro IDE, Kiro CLI."
+        )
+
+    def test_summary_with_label(self):
+        config = Config(server=ServerConfig(instance_label="claude-rearview"))
+        assert config.instance_summary == (
+            'Instance "claude-rearview". Indexes: Claude Code, Kiro IDE, Kiro CLI.'
+        )
+
+    def test_label_whitespace_ignored(self):
+        config = Config(server=ServerConfig(instance_label="   "))
+        assert config.instance_summary.startswith("Indexes:")
+
+    def test_summary_when_everything_disabled(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        config = Config(
+            claude=ClaudeSourceConfig(enabled=False),
+            ide=IDESourceConfig(enabled=False),
+            cli=CLISourceConfig(enabled=False),
+        )
+        assert config.indexed_sources == []
+        assert "nothing (all sources are disabled)" in config.instance_summary
+
+    def test_two_instances_are_distinguishable(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        claude_instance = Config(
+            server=ServerConfig(instance_label="claude-rearview")
+        )
+        kiro_instance = Config(
+            server=ServerConfig(instance_label="kiro-ception"),
+            claude=ClaudeSourceConfig(enabled=False),
+        )
+        assert claude_instance.instance_summary != kiro_instance.instance_summary
+        assert "Claude Code" in claude_instance.instance_summary
+        assert "Claude Code" not in kiro_instance.instance_summary
+
+    def test_label_defaults_to_empty(self):
+        assert Config().server.instance_label == ""
+
+    def test_label_parsed_from_toml(self):
+        config = Config.from_dict({"server": {"instance_label": "alt"}})
+        assert config.server.instance_label == "alt"
+        assert config.instance_summary.startswith('Instance "alt".')
+
+
 # --- Config.engine_log_path ---
 
 
