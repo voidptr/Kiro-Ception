@@ -74,14 +74,29 @@ def _preload_native_extensions(backend_type: str):
         print(f"Preload skipped ({e}) after {elapsed:.1f}s")
 
 
-def _write_engine_info(port: int, pid: int, cache_dir: Path):
-    """Write engine info atomically for followers to discover."""
+# This module is the engine process entrypoint, so import time is process
+# start time. Captured once so engine.json can report a fixed started_at.
+_PROCESS_START_TIME = time.time()
+
+
+def _write_engine_info(port: int, pid: int, cache_dir: Path, started_at: float):
+    """Write engine info atomically for followers to discover.
+
+    started_at must be this engine's real start time and stay fixed for the
+    life of the process. The heartbeat rewrites this file periodically; if it
+    refreshed started_at too, a stale engine would keep looking freshly
+    spawned and spawn_engine()'s "started_at > spawn_time" check — its only
+    way to tell our spawn from a leftover one — would always pass.
+
+    heartbeat_at carries the liveness signal instead.
+    """
     info_path = cache_dir / "engine.json"
     info = {
         "port": port,
         "pid": pid,
         "parent_pid": os.getppid(),
-        "started_at": time.time(),
+        "started_at": started_at,
+        "heartbeat_at": time.time(),
     }
     fd, tmp_path = tempfile.mkstemp(dir=str(cache_dir), suffix=".tmp")
     try:
@@ -502,7 +517,7 @@ def main():
         sys.exit(1)
 
     # Write engine info
-    _write_engine_info(port, os.getpid(), cache_dir)
+    _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
     _log(f"Acquired engineship (pid={os.getpid()}, port={port})")
 
     # === START BACKGROUND INDEXER ===
@@ -599,12 +614,12 @@ def main():
 
     # === START HEARTBEAT THREAD ===
     def heartbeat_loop():
-        """Periodically refresh engine.json timestamp."""
+        """Periodically refresh engine.json's heartbeat_at timestamp."""
         interval = config.server.heartbeat_interval_seconds
         while True:
             time.sleep(interval)
             try:
-                _write_engine_info(port, os.getpid(), cache_dir)
+                _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
             except Exception as e:
                 _log(f"Heartbeat write failed: {e}")
 
@@ -627,7 +642,7 @@ def main():
         server = ThreadingHTTPServer((bind_address, port), RequestHandler)
     except OSError:
         port += 1
-        _write_engine_info(port, os.getpid(), cache_dir)
+        _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
         try:
             server = ThreadingHTTPServer((bind_address, port), RequestHandler)
         except OSError:
