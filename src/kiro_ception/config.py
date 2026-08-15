@@ -189,10 +189,14 @@ class ServerConfig:
     listen_address: str = ""  # Bind address ("" = auto: 0.0.0.0 if peers enabled, else 127.0.0.1)
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
-    # Short name identifying this instance, surfaced in the MCP server name and
-    # appended to every tool description. Concurrent instances expose
-    # identically-named tools, so this is what tells callers them apart.
-    # Empty = unlabelled (upstream default).
+    # Short name distinguishing this instance from other instances running
+    # alongside it. Appended to every tool description, since concurrent
+    # instances otherwise expose identical tool names and docstrings. This is
+    # a discriminator only — it does not rename the server, which stays
+    # "kiro-ception".
+    #   ""       = unlabelled (upstream default)
+    #   "auto"   = derive from cache_dir, falling back to the engine port
+    #   "<name>" = use this literal name
     instance_label: str = ""
     # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
     # or an explicit path. "auto" keeps the log inside the instance's own
@@ -228,6 +232,10 @@ _SOURCE_LABELS: tuple[tuple[str, str], ...] = (
     ("cli", "Kiro CLI"),
 )
 
+# Container directory names that identify no particular instance, so an
+# auto-derived label looks past them to the parent.
+_GENERIC_DIR_NAMES = frozenset({"cache", "data", "var", "tmp", "store"})
+
 
 @dataclass
 class Config:
@@ -254,6 +262,33 @@ class Config:
         }
         return [label for key, label in _SOURCE_LABELS if enabled[key]]
 
+    def derive_instance_label(self) -> str:
+        """Derive a stable label from this instance's own unique resources.
+
+        cache_dir is unique per instance by construction — the engine lock
+        lives there, so two instances cannot share one — which makes its name
+        a sound key. Generic container names are skipped in favour of the
+        parent, so both `~/.cache/claude-rearview` and
+        `<root>/claude-rearview/cache` derive "claude-rearview".
+
+        Falls back to the engine port, which is unique among *running*
+        instances because only one process can bind it.
+        """
+        path = self.embedding.cache_path
+        for part in (path.name, path.parent.name):
+            candidate = part.strip().lstrip(".")
+            if candidate and candidate.lower() not in _GENERIC_DIR_NAMES:
+                return candidate
+        return f"port-{self.server.engine_port}"
+
+    @property
+    def resolved_instance_label(self) -> str:
+        """The effective label: explicit, auto-derived, or empty."""
+        label = self.server.instance_label.strip()
+        if label == "auto":
+            return self.derive_instance_label()
+        return label
+
     @property
     def instance_summary(self) -> str:
         """One-line statement of what this instance indexes.
@@ -264,7 +299,7 @@ class Config:
         """
         sources = self.indexed_sources
         body = ", ".join(sources) if sources else "nothing (all sources are disabled)"
-        label = self.server.instance_label.strip()
+        label = self.resolved_instance_label
         if label:
             return f'Instance "{label}". Indexes: {body}.'
         return f"Indexes: {body}."

@@ -537,7 +537,8 @@ def main():
                 "platform": f"{_platform.system()} {_platform.machine()}",
             },
             "instance": {
-                "label": current_config.server.instance_label or None,
+                "label": current_config.resolved_instance_label or None,
+                "label_setting": current_config.server.instance_label or None,
                 "summary": current_config.instance_summary,
                 "indexes": current_config.indexed_sources,
             },

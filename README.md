@@ -234,10 +234,12 @@ Routing is only half the problem, though. Every instance exposes the *same* tool
 
 ```toml
 [server]
-instance_label = "claude-rearview"
+instance_label = "auto"     # or a literal name like "claude-rearview"
 ```
 
-That label becomes the MCP server name and is appended to every tool description, derived from the sources actually enabled:
+`"auto"` derives the name rather than making you invent one, keying off resources that are unique per instance by construction: the `cache_dir` name (skipping generic container names like `cache`, so both `~/.cache/claude-rearview` and `<root>/claude-rearview/cache` yield `claude-rearview`), falling back to `port-<engine_port>`. Both keys are enforced rather than conventional — the engine lock lives in `cache_dir`, so two instances cannot share one, and only one process can bind a port.
+
+The label is appended to every tool description, derived from the sources actually enabled:
 
 ```
 Instance "claude-rearview". Indexes: Claude Code, Kiro IDE, Kiro CLI.
@@ -250,12 +252,15 @@ The same information is queryable at runtime via the `get_config` tool (or `GET 
 ```json
 "instance": {
   "label": "claude-rearview",
+  "label_setting": "auto",
   "summary": "Instance \"claude-rearview\". Indexes: Claude Code, Kiro IDE, Kiro CLI.",
   "indexes": ["Claude Code", "Kiro IDE", "Kiro CLI"]
 }
 ```
 
-`instance_label` is applied when the MCP process starts, so restart the server after changing it. Leaving it empty preserves the original behaviour: the server is named `kiro-ception` and descriptions carry the bare `Indexes: ...` line.
+`label` is the resolved name; `label_setting` is what the config asked for, so you can see whether a name was derived or pinned.
+
+`instance_label` is a discriminator, not a rename — the server is always named `kiro-ception`, whichever instance you are talking to. It is applied when the MCP process starts, so restart the server after changing it. Leaving it empty preserves the original behaviour: descriptions carry the bare `Indexes: ...` line.
 
 ### Running as a Standalone Service
 

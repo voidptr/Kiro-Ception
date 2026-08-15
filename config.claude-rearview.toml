@@ -58,10 +58,12 @@ engine_port = 19761
 # instance's directory.
 engine_log_file = "auto"
 
-# ISOLATION KEY #3 (discoverability) — names this instance in the MCP server
-# name and in every tool description, so a caller looking at two identical
-# tool sets can tell which one indexes Claude Code.
-instance_label = "claude-rearview"
+# ISOLATION KEY #3 (discoverability) — distinguishes this instance in every
+# tool description, so a caller looking at two identical tool sets can tell
+# which one indexes Claude Code. Does not rename the server.
+# "auto" derives it from cache_dir (here: "claude-rearview"), so it stays
+# correct if you rename the instance directory. Set a literal string to pin it.
+instance_label = "auto"
 
 [search]
 default_threshold = 0.2

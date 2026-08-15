@@ -42,9 +42,10 @@ def _apply_config_override_from_argv() -> None:
 
 _apply_config_override_from_argv()
 
-_INSTANCE_LABEL = _get_config().server.instance_label.strip()
-
-mcp = FastMCP(_INSTANCE_LABEL or "kiro-ception")
+# The server name is the product identity and is deliberately constant across
+# instances — server.instance_label distinguishes instances in tool
+# descriptions, it does not rename the server.
+mcp = FastMCP("kiro-ception")
 
 
 def _instance_tool(fn):
@@ -304,7 +305,8 @@ def get_config() -> dict:
         return {
             "error": "Engine unavailable — showing local config only",
             "instance": {
-                "label": config.server.instance_label or None,
+                "label": config.resolved_instance_label or None,
+                "label_setting": config.server.instance_label or None,
                 "summary": config.instance_summary,
                 "indexes": config.indexed_sources,
             },

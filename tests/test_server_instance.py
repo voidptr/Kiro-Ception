@@ -102,6 +102,25 @@ def _register(monkeypatch, config: Config) -> str:
     return recorder.descriptions[0]
 
 
+class TestServerNameIsConstant:
+    """instance_label distinguishes instances; it must not rename the server.
+
+    The product identity is "kiro-ception" for every instance. Callers select
+    an instance by its MCP config key, and tell instances apart by the label
+    in each tool description — neither depends on the server name.
+    """
+
+    def test_server_name_is_kiro_ception(self):
+        assert server.mcp.name == "kiro-ception"
+
+    def test_label_is_not_the_server_name(self, monkeypatch):
+        config = Config(server=ServerConfig(instance_label="claude-rearview"))
+        monkeypatch.setattr(server, "_get_config", lambda: config)
+        # The label belongs in descriptions only.
+        assert server.mcp.name == "kiro-ception"
+        assert "claude-rearview" in config.instance_summary
+
+
 class TestInstanceAwareToolDescriptions:
     def test_description_keeps_the_original_docstring(self, monkeypatch):
         description = _register(monkeypatch, Config())
