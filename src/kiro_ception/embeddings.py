@@ -64,7 +64,19 @@ class SentenceTransformersBackend(EmbeddingBackend):
 
             model_name = self._config.embedding.model
             print(f"[kiro-ception] Loading embedding model '{model_name}'...")
-            self._model = SentenceTransformer(model_name)
+            try:
+                # After the first run the model is already in the local HF
+                # cache, but SentenceTransformer still revalidates against the
+                # Hub on every load — several network round-trips costing ~6s
+                # per engine start, and a hard dependency on being online.
+                # Load straight from cache and only reach out if it is absent.
+                self._model = SentenceTransformer(model_name, local_files_only=True)
+            except Exception:
+                print(
+                    f"[kiro-ception] '{model_name}' not in local cache — "
+                    f"downloading (first run only)..."
+                )
+                self._model = SentenceTransformer(model_name)
             print("[kiro-ception] Model loaded.")
         return self._model
 

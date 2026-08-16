@@ -172,3 +172,68 @@ class TestOpenAICompatibleBackend:
 
             with pytest.raises(requests.HTTPError):
                 backend.encode_query("test")
+
+
+# --- SentenceTransformersBackend model loading ---
+
+
+class TestSentenceTransformersModelLoad:
+    """The model is loaded from the local HF cache when possible.
+
+    SentenceTransformer otherwise revalidates against the Hub on every load —
+    measured at ~6s per engine start for an already-cached model, plus a hard
+    dependency on network reachability.
+    """
+
+    def _backend(self, model="all-MiniLM-L6-v2"):
+        from kiro_ception.config import Config, EmbeddingConfig
+        from kiro_ception.embeddings import SentenceTransformersBackend
+
+        config = Config(embedding=EmbeddingConfig(model=model))
+        with patch("kiro_ception.embeddings.get_config", return_value=config):
+            return SentenceTransformersBackend()
+
+    def test_loads_from_local_cache_first(self):
+        backend = self._backend()
+        fake = MagicMock()
+        with patch.dict(
+            "sys.modules",
+            {"sentence_transformers": MagicMock(SentenceTransformer=fake)},
+        ):
+            backend._get_model()
+
+        fake.assert_called_once_with("all-MiniLM-L6-v2", local_files_only=True)
+
+    def test_falls_back_to_download_when_not_cached(self):
+        backend = self._backend()
+        sentinel = object()
+
+        def side_effect(name, **kwargs):
+            if kwargs.get("local_files_only"):
+                raise OSError("not in cache")
+            return sentinel
+
+        fake = MagicMock(side_effect=side_effect)
+        with patch.dict(
+            "sys.modules",
+            {"sentence_transformers": MagicMock(SentenceTransformer=fake)},
+        ):
+            model = backend._get_model()
+
+        assert model is sentinel
+        assert fake.call_count == 2
+        # Second attempt must not pin to the local cache.
+        assert fake.call_args_list[1] == (("all-MiniLM-L6-v2",), {})
+
+    def test_model_is_cached_on_the_backend(self):
+        backend = self._backend()
+        fake = MagicMock()
+        with patch.dict(
+            "sys.modules",
+            {"sentence_transformers": MagicMock(SentenceTransformer=fake)},
+        ):
+            first = backend._get_model()
+            second = backend._get_model()
+
+        assert first is second
+        fake.assert_called_once()
