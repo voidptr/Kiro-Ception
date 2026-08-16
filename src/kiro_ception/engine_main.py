@@ -554,6 +554,15 @@ def main():
                     "enabled": current_config.ide.enabled,
                     "patterns": current_config.ide.patterns,
                 },
+                "claude": {
+                    "enabled": current_config.claude.enabled,
+                    "roots": current_config.claude.roots,
+                    "active_roots": [str(p) for p in current_config.claude.get_roots()],
+                    "include_subagents": current_config.claude.include_subagents,
+                    "include_sidechains": current_config.claude.include_sidechains,
+                    "include_thinking": current_config.claude.include_thinking,
+                    "include_tool_context": current_config.claude.include_tool_context,
+                },
             },
             "embedding": {
                 "backend": current_config.embedding.backend,

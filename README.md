@@ -25,7 +25,7 @@ Kiro Ception gives Kiro a long-term memory, persistent recall that spans every s
 
 Kiro Ception is an [MCP Power](https://kiro.dev/docs/powers/) that runs as a background service alongside your Kiro IDE. It:
 
-1. **Discovers** all Kiro CLI and IDE session files on your machine
+1. **Discovers** all Kiro CLI and IDE session files on your machine, plus Claude Code transcripts
 2. **Extracts** meaningful messages (filtering out system prompts and boilerplate, condensing long code blocks into `[code:lang]` placeholders)
 3. **Embeds** each message into a vector representation using your configured model
 4. **Indexes** everything into an in-memory numpy matrix for instant hybrid search (semantic + FTS5 keyword)
@@ -124,6 +124,68 @@ Alternatively, if you've cloned the repo locally:
 
 Replace `/path/to/Kiro-Ception` with the actual clone location. Usually just saving your mcp config will do it, but if needed, restart Kiro.
 
+## Claude Code Support
+
+Kiro Ception indexes [Claude Code](https://claude.com/claude-code) transcripts alongside Kiro CLI and IDE history. It is on by default and needs no configuration if Claude Code stores its history in the standard location.
+
+Claude Code writes one JSONL transcript per session:
+
+```
+~/.claude/projects/<encoded-workspace>/<session-uuid>.jsonl
+~/.claude/projects/<encoded-workspace>/<session-uuid>/subagents/<uuid>.jsonl
+```
+
+The directory name is a lossy encoding of the workspace path (every non-alphanumeric character becomes `-`), so it cannot be reliably reversed. The loader instead reads the real workspace from the `cwd` field carried on every conversational record, which keeps `search_project_history` scoping accurate. The directory name is only used as a fallback for transcripts that never recorded a `cwd`.
+
+### What Gets Indexed
+
+| Record | Indexed as | Notes |
+|--------|-----------|-------|
+| `user` text | Conversation | `<system-reminder>` blocks are stripped; harness plumbing (`isMeta` turns, slash-command echoes, local command output) is dropped |
+| `assistant` text | Conversation | Fenced code blocks are condensed to `[code:lang]` placeholders, same as Kiro sources |
+| `assistant` thinking | Conversation | Off by default — see `include_thinking` |
+| `tool_use` + `tool_result` | Tool context | Paired by `tool_use_id` and condensed into one `[Tool] description → outcome` summary, only matched when a search passes `include_tool_context: true` |
+| Subagent transcripts | Conversation | Indexed as their own sessions (`<parent>-sub-<uuid>`) |
+| Everything else | — | `mode`, `ai-title`, `last-prompt`, `attachment`, `queue-operation`, `permission-mode`, `file-history-*`, and `system` records are bookkeeping and skipped |
+
+Tool summaries honor the existing `[tool_summaries]` settings (`excluded_tools`, `max_summary_length`, `include_meaningful_output`), so tuning applies uniformly across Kiro and Claude sources.
+
+### Configuration
+
+```toml
+[sources.claude]
+enabled = true
+
+# Every root that exists is scanned — unlike the cli/ide sources, which are
+# first-match-wins — so multiple Claude installations can be indexed together.
+roots = [
+    "~/.claude/projects",
+    "~/.config/claude/projects",
+]
+
+include_subagents = true      # Index <session>/subagents/*.jsonl as their own sessions
+include_sidechains = true     # Index subagent turns inlined in the main transcript
+include_thinking = false      # Index extended thinking blocks (verbose; larger index)
+include_tool_context = true   # Condense tool_use/tool_result pairs into summaries
+```
+
+All of these are hot-reloadable — change them and call the `reload_config` tool, no re-index required. Turning `include_thinking` on indexes content that was previously skipped, so follow it with `rescan(full=True)` to backfill.
+
+To disable Claude indexing entirely, set `enabled = false`.
+
+### Searching a Single Assistant
+
+The `source` parameter on `search_global_history` accepts `"claude"` alongside `"cli"` and `"ide"`. Leave it at `"all"` (the default) to search everything.
+
+### Workspace Detection
+
+`search_project_history` scopes to the current workspace, resolved in this order:
+
+1. `search.workspace_dir` in the config file
+2. `KIRO_WORKSPACE` (set by Kiro IDE/CLI)
+3. `CLAUDE_PROJECT_DIR` (set by Claude Code)
+4. The current working directory
+
 ## Configuration
 
 Create `~/.config/kiro-ception/config.toml` to customize behavior. If this file doesn't exist, sensible defaults are used (local CPU-based embeddings with `all-MiniLM-L6-v2`).  Query the tool `get_config` for full information on your file location(s) for your config and database.
@@ -141,7 +203,7 @@ With no config file at all, Kiro Ception uses:
 
 - **Backend**: `sentence-transformers` (local, CPU-based, no API/GPU needed)
 - **Model**: `all-MiniLM-L6-v2` (384 dimensions, ~80MB download on first run)
-- **Sources**: Auto-discovers Kiro CLI and IDE conversations in both old and new formats
+- **Sources**: Auto-discovers Kiro CLI and IDE conversations in both old and new formats, plus Claude Code transcripts under `~/.claude/projects`
 - **Memory**: Uses up to 1/3 of available RAM for the index (by default)
 
 This is a good starting point; it runs entirely on CPU with no external dependencies.
@@ -360,6 +422,7 @@ Kiro Ception auto-discovers and indexes conversations from three IDE formats plu
 | **Legacy .chat** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/<uuid>.chat` | Earliest format. Full conversations in a single JSON file with `chat` array. |
 | **Execution logs (pre-1.0)** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/414d1636299d2b9e4ce7e17fb11f63e9/<exec_id>` | Separate files containing assistant responses (actionType="say") and tool actions. Used to reconstruct full conversations for workspace-sessions format. |
 | **CLI** | `~/.kiro/cli/conversations.db` | SQLite database with `conversations_v2` table. Indexed automatically. |
+| **Claude Code** | `~/.claude/projects/<encoded-workspace>/<session-uuid>.jsonl` | One JSONL transcript per session, plus subagent transcripts under `<session-uuid>/subagents/`. Workspace is read from each record's `cwd` field. See [Claude Code Support](#claude-code-support). |
 
 When the same session exists in multiple formats (e.g., migrated from workspace-sessions to Kiro 1.0), deduplication ensures it is only indexed once, preferring the richest format (Kiro 1.0 > workspace-sessions > legacy).
 

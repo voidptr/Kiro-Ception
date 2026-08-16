@@ -102,6 +102,41 @@ class IDESourceConfig:
 
 
 @dataclass
+class ClaudeSourceConfig:
+    """Claude Code source configuration.
+
+    Claude Code writes one JSONL transcript per session under
+    ``<root>/<encoded_workspace>/<session_uuid>.jsonl``. Unlike the CLI and IDE
+    sources, every configured root that exists is scanned (not just the first),
+    so multiple Claude installations can be indexed together.
+    """
+
+    enabled: bool = True
+    roots: list[str] = field(default_factory=lambda: [
+        "~/.claude/projects",
+        "~/.config/claude/projects",
+    ])
+    # Subagent transcripts live under <session_id>/subagents/ and hold
+    # conversation the main transcript only references by tool call.
+    include_subagents: bool = True
+    # Sidechain records are subagent turns inlined into the main transcript.
+    include_sidechains: bool = True
+    # Extended thinking blocks: valuable but verbose, so off by default.
+    include_thinking: bool = False
+    # Condense tool_use/tool_result pairs into tool-context summaries.
+    include_tool_context: bool = True
+
+    def get_roots(self) -> list[Path]:
+        """Return every configured root that exists on disk."""
+        roots = []
+        for root in self.roots:
+            expanded = expand_path(root)
+            if expanded.is_dir() and expanded not in roots:
+                roots.append(expanded)
+        return roots
+
+
+@dataclass
 class EmbeddingConfig:
     """Embedding configuration."""
 
@@ -183,6 +218,7 @@ class Config:
 
     cli: CLISourceConfig = field(default_factory=CLISourceConfig)
     ide: IDESourceConfig = field(default_factory=IDESourceConfig)
+    claude: ClaudeSourceConfig = field(default_factory=ClaudeSourceConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
@@ -196,6 +232,7 @@ class Config:
         """Create config from dictionary."""
         cli_data = data.get("sources", {}).get("cli", {})
         ide_data = data.get("sources", {}).get("ide", {})
+        claude_data = data.get("sources", {}).get("claude", {})
         emb_data = data.get("embedding", {})
         search_data = data.get("search", {})
         mem_data = data.get("memory", {})
@@ -207,6 +244,7 @@ class Config:
         return cls(
             cli=CLISourceConfig(**cli_data) if cli_data else CLISourceConfig(),
             ide=IDESourceConfig(**ide_data) if ide_data else IDESourceConfig(),
+            claude=ClaudeSourceConfig(**claude_data) if claude_data else ClaudeSourceConfig(),
             embedding=EmbeddingConfig(**emb_data) if emb_data else EmbeddingConfig(),
             search=SearchConfig(**search_data) if search_data else SearchConfig(),
             memory=MemoryConfig(**mem_data) if mem_data else MemoryConfig(),
@@ -279,6 +317,12 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("server.engine_port", old.server.engine_port, new.server.engine_port),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.ide.enabled", old.ide.enabled, new.ide.enabled),
+        ("sources.claude.enabled", old.claude.enabled, new.claude.enabled),
+        ("sources.claude.roots", old.claude.roots, new.claude.roots),
+        ("sources.claude.include_subagents", old.claude.include_subagents, new.claude.include_subagents),
+        ("sources.claude.include_sidechains", old.claude.include_sidechains, new.claude.include_sidechains),
+        ("sources.claude.include_thinking", old.claude.include_thinking, new.claude.include_thinking),
+        ("sources.claude.include_tool_context", old.claude.include_tool_context, new.claude.include_tool_context),
         ("peers.enabled", old.peers.enabled, new.peers.enabled),
         ("peers.nodes", old.peers.nodes, new.peers.nodes),
         ("peers.secret", "***" if old.peers.secret else "", "***" if new.peers.secret else ""),
