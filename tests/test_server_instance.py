@@ -10,6 +10,7 @@ import sys
 
 import pytest
 
+from kiro_ception import config as config_module
 from kiro_ception import server
 from kiro_ception.config import (
     ClaudeSourceConfig,
@@ -22,10 +23,17 @@ from kiro_ception.config import (
 
 @pytest.fixture(autouse=True)
 def restore_config_override():
-    """Undo any config-file override a test installs."""
-    original = get_config_file()
+    """Undo any config-file override a test installs.
+
+    Restores the raw override rather than get_config_file(), which falls back
+    to the default path when nothing is set — feeding that back through
+    set_config_file() would install an override that was never there and leak
+    into later tests.
+    """
+    original = config_module._config_file_override
     yield
-    set_config_file(original)
+    config_module._config_file_override = original
+    config_module.get_config.cache_clear()
 
 
 # --- --config must win before import-time config reads ---

@@ -502,10 +502,12 @@ def main():
         sys.stderr = log_fh
         _log(f"Engine starting (pid={os.getpid()}, log={log_path})")
 
-    # === PRELOAD NATIVE EXTENSIONS (before any threads) ===
-    _preload_native_extensions(config.embedding.backend)
-
     # === ACQUIRE LEADERSHIP (file lock) ===
+    # This must come BEFORE the native-extension preload. Only one process can
+    # win the lock, and the preload costs ~12s in isolation — far more when
+    # several engines start at once and contend importing torch. Electing first
+    # lets losers exit in milliseconds instead of paying the whole import
+    # before discovering they are not the leader.
     from filelock import FileLock, Timeout
 
     lock_path = cache_dir / "engine.lock"
@@ -519,6 +521,12 @@ def main():
     # Write engine info
     _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
     _log(f"Acquired engineship (pid={os.getpid()}, port={port})")
+
+    # === PRELOAD NATIVE EXTENSIONS (before any threads) ===
+    # Still has to happen before any thread starts — see the function's
+    # docstring for the Windows loader-lock deadlock this avoids — but now only
+    # the winner pays for it.
+    _preload_native_extensions(config.embedding.backend)
 
     # === START BACKGROUND INDEXER ===
     from .background_indexer import get_background_indexer

@@ -8,6 +8,7 @@ keep looking freshly spawned and that check could never reject one.
 
 import json
 import time
+from unittest.mock import MagicMock
 
 from kiro_ception.engine_main import _write_engine_info
 
@@ -71,3 +72,69 @@ class TestWriteEngineInfo:
         assert info["port"] == 19762
         assert info["pid"] == 2
         assert info["started_at"] == 2000.0
+
+
+class TestEngineElectionOrder:
+    """A process that loses the election must exit before doing heavy work.
+
+    _preload_native_extensions imports torch/sentence-transformers, ~12s in
+    isolation and far worse when several engines start at once and contend for
+    CPU. Measured: with the preload ahead of the lock, a loser took 49.5s to
+    discover it was not the leader; with the lock first, 1.9s.
+
+    The loser must also not touch engine.json — that file belongs to whichever
+    process holds the lock.
+    """
+
+    def _config_file(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        cfg = tmp_path / "config.toml"
+        cfg.write_text(
+            "[embedding]\n"
+            f'cache_dir = "{cache.as_posix()}"\n'
+            "[server]\n"
+            "engine_port = 19998\n"
+            # Empty disables log redirection, which would hijack stdout.
+            'engine_log_file = ""\n',
+            encoding="utf-8",
+        )
+        return cfg, cache
+
+    def test_loser_exits_without_preloading_or_writing_engine_info(
+        self, tmp_path, monkeypatch
+    ):
+        import sys as _sys
+
+        import pytest
+        from filelock import FileLock
+
+        from kiro_ception import config as config_module
+        from kiro_ception import engine_main
+
+        cfg, cache = self._config_file(tmp_path)
+        # Restore the raw override, not get_config_file() — that returns the
+        # default path when no override is set, so feeding it back through
+        # set_config_file() would install an override that was never there and
+        # leak into every later test.
+        original_override = config_module._config_file_override
+
+        held = FileLock(str(cache / "engine.lock"), timeout=0)
+        held.acquire(timeout=0)
+
+        preload = MagicMock()
+        write_info = MagicMock()
+        monkeypatch.setattr(engine_main, "_preload_native_extensions", preload)
+        monkeypatch.setattr(engine_main, "_write_engine_info", write_info)
+        monkeypatch.setattr(_sys, "argv", ["engine", "--config", str(cfg)])
+
+        try:
+            with pytest.raises(SystemExit) as exc:
+                engine_main.main()
+            assert exc.value.code == 1
+            preload.assert_not_called()
+            write_info.assert_not_called()
+        finally:
+            held.release()
+            config_module._config_file_override = original_override
+            config_module.get_config.cache_clear()
