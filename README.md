@@ -218,6 +218,55 @@ The same information is queryable at runtime via the `get_config` tool (or `GET 
 
 `instance_label` is a discriminator, not a rename — the server is always named `kiro-ception`, whichever instance you are talking to. It is applied when the MCP process starts, so restart the server after changing it. Leaving it empty preserves the original behaviour: descriptions carry the bare `Indexes: ...` line.
 
+### Installing an Instance in Its Own Folder
+
+An instance does not need its own folder — pointing `--config` at a config file is enough. But if you want one fully self-contained directory (venv, config, and data), build a wheel and install it into a dedicated venv:
+
+```bash
+uv build                                    # -> dist/kiro_ception-<ver>-py3-none-any.whl
+
+ROOT=~/.local/share/claude-history         # Windows: %LOCALAPPDATA%\claude-history
+mkdir -p "$ROOT/cache"
+uv venv "$ROOT/.venv"
+uv pip install --python "$ROOT/.venv/bin/python" dist/kiro_ception-*.whl
+```
+
+Write `$ROOT/config.toml` with `cache_dir` pointing at `$ROOT/cache` and a unique `engine_port`, then register that venv's console script as an MCP server:
+
+```json
+"claude-history": {
+  "type": "stdio",
+  "command": "<ROOT>/.venv/bin/kiro-ception",
+  "args": ["--config", "<ROOT>/config.toml"]
+}
+```
+
+Your editor starts it from there on demand — **no separate service or supervisor process is involved**. The MCP proxy registers itself as a follower, and the engine shuts down when the last client exits.
+
+#### Slow cold starts
+
+The first engine start preloads torch and the embedding model, which can take a minute or more. `ensure_engine_running()` waits `server.engine_startup_timeout_seconds` (default 30) for it.
+
+Overrunning that is **not fatal** — the engine keeps starting in the background and later tool calls reach it once it is listening. The only symptom is that tool calls made during the gap report the engine as unavailable. Raise the timeout to trade slower MCP startup for a ready-on-first-call engine:
+
+```toml
+[server]
+engine_startup_timeout_seconds = 90
+```
+
+#### Debugging an instance with no client attached
+
+`scripts/debug-engine.py` holds an engine open when there is **no MCP client** — for verifying a new instance's isolation before registering it, headless/CI runs, or watching a first index without opening an editor. It is a development tool, not part of normal operation:
+
+```bash
+python scripts/debug-engine.py --config "$ROOT/config.toml"
+
+curl -s http://127.0.0.1:<engine_port>/status    # indexing progress, search readiness
+curl -s http://127.0.0.1:<engine_port>/config    # instance identity and every local path
+```
+
+It exists because the engine refuses to outlive its clients: it exits once every registered follower has died, or after 120s if none ever registers (orphan protection). So `python -m kiro_ception.engine_main` alone gives you an engine that disappears two minutes later. The tool is the missing follower — each health check re-registers it via `X-Follower-PID`. Stop it and the engine shuts down cleanly. Don't run it alongside a normal editor setup; it only adds a second follower.
+
 ### Workspace Detection
 
 `search_project_history` scopes to the current workspace, resolved in this order:
