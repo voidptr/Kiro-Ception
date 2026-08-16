@@ -262,39 +262,54 @@ The same information is queryable at runtime via the `get_config` tool (or `GET 
 
 `instance_label` is a discriminator, not a rename — the server is always named `kiro-ception`, whichever instance you are talking to. It is applied when the MCP process starts, so restart the server after changing it. Leaving it empty preserves the original behaviour: descriptions carry the bare `Indexes: ...` line.
 
-### Running as a Standalone Service
+### Installing an Instance in Its Own Folder
 
-Normally the engine is spawned on demand by an MCP proxy. To run an instance as a long-lived service in its own self-contained folder — independent of any editor — build a wheel and install it into a dedicated venv:
+An instance does not need its own folder — pointing `--config` at a config file is enough. But if you want one fully self-contained directory (venv, config, and data), build a wheel and install it into a dedicated venv:
 
 ```bash
 uv build                                    # -> dist/kiro_ception-<ver>-py3-none-any.whl
 
-# Pick a folder; everything this instance owns lives under it.
 ROOT=~/.local/share/claude-rearview         # Windows: %LOCALAPPDATA%\claude-rearview
 mkdir -p "$ROOT/cache"
 uv venv "$ROOT/.venv"
 uv pip install --python "$ROOT/.venv/bin/python" dist/kiro_ception-*.whl
-cp scripts/serve.py "$ROOT/serve.py"
 ```
 
-Write `$ROOT/config.toml` with `cache_dir` pointing at `$ROOT/cache` and a unique `engine_port`, then start it:
+Write `$ROOT/config.toml` with `cache_dir` pointing at `$ROOT/cache` and a unique `engine_port`, then register that venv's console script as an MCP server:
 
-```bash
-"$ROOT/.venv/bin/python" "$ROOT/serve.py" --config "$ROOT/config.toml"
+```json
+"claude-rearview": {
+  "type": "stdio",
+  "command": "<ROOT>/.venv/bin/kiro-ception",
+  "args": ["--config", "<ROOT>/config.toml"]
+}
 ```
 
-The result is one folder holding the venv, config, embedding DB, engine lock/info, and log — nothing shared with any other instance.
+Your editor starts it from there on demand — **no separate service or supervisor process is involved**. The MCP proxy registers itself as a follower, and the engine shuts down when the last client exits.
 
-**Why `serve.py` is needed.** The engine deliberately refuses to outlive its clients: it shuts down once every registered follower has died, or after 120 seconds if no follower ever registers (orphan protection). Launching `python -m kiro_ception.engine_main` directly therefore gives you an engine that exits two minutes later. `serve.py` is the missing follower — it spawns the engine and then health-checks on an interval, and since `EngineClient` stamps `X-Follower-PID` on every request, each check re-registers the supervisor. Stop the supervisor and the engine shuts down cleanly on its own.
+#### Slow cold starts
 
-`--startup-timeout` (default 300s) covers cold starts: preloading torch and the embedding model can take minutes on some machines, well beyond the 30s that `ensure_engine_running()` waits internally.
+The first engine start preloads torch and the embedding model, which can take a minute or more. `ensure_engine_running()` waits `server.engine_startup_timeout_seconds` (default 30) for it.
 
-Verify at any time:
+Overrunning that is **not fatal** — the engine keeps starting in the background and later tool calls reach it once it is listening. The only symptom is that tool calls made during the gap report the engine as unavailable. Raise the timeout to trade slower MCP startup for a ready-on-first-call engine:
+
+```toml
+[server]
+engine_startup_timeout_seconds = 90
+```
+
+#### Debugging an instance with no client attached
+
+`tools/debug_engine.py` holds an engine open when there is **no MCP client** — for verifying a new instance's isolation before registering it, headless/CI runs, or watching a first index without opening an editor. It is a development tool, not part of normal operation:
 
 ```bash
+python tools/debug_engine.py --config "$ROOT/config.toml"
+
 curl -s http://127.0.0.1:<engine_port>/status    # indexing progress, search readiness
-curl -s http://127.0.0.1:<engine_port>/config    # every instance-local path
+curl -s http://127.0.0.1:<engine_port>/config    # instance identity and every local path
 ```
+
+It exists because the engine refuses to outlive its clients: it exits once every registered follower has died, or after 120s if none ever registers (orphan protection). So `python -m kiro_ception.engine_main` alone gives you an engine that disappears two minutes later. The tool is the missing follower — each health check re-registers it via `X-Follower-PID`. Stop it and the engine shuts down cleanly. Don't run it alongside a normal editor setup; it only adds a second follower.
 
 ### Workspace Detection
 

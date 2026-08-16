@@ -134,6 +134,17 @@ engine_port = 19742
 # detect a dead engine and self-promote. Engine uses it to refresh its heartbeat.
 heartbeat_interval_seconds = 30
 
+# How long to wait for a newly spawned engine to answer its first health check.
+# A cold start preloads torch and the embedding model, which can take a minute
+# or more on slower machines — longer than the default wait.
+#
+# Overrunning it is NOT fatal: the engine keeps starting in the background and
+# later tool calls reach it once it is listening. The only symptom is that
+# tool calls made during the gap report the engine as unavailable.
+#
+# Raise this to trade a slower MCP startup for a ready-on-first-call engine.
+# engine_startup_timeout_seconds = 90
+
 # Short name distinguishing this instance from others running alongside it.
 # Concurrent instances expose identical tool names and docstrings, so when set
 # this is quoted in every tool description to tell them apart, e.g.
