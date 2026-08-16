@@ -22,8 +22,8 @@ from kiro_ception.config import (
 class TestEngineStartupTimeout:
     """Cold starts (torch + embedding model) can exceed the default wait.
 
-    Overrunning is not fatal â€” the engine keeps starting and later calls reach
-    it â€” so the default stays short to avoid blocking MCP startup, but it has
+    Overrunning is not fatal — the engine keeps starting and later calls reach
+    it — so the default stays short to avoid blocking MCP startup, but it has
     to be raisable on slow machines.
     """
 
@@ -68,6 +68,131 @@ class TestEngineStartupTimeout:
         assert engine_client._startup_timeout() == 30
 
 
+# --- Instance identity ---
+
+
+class TestInstanceIdentity:
+    """Concurrent instances expose identical tool names, so every tool
+    description has to state which sources its instance indexes."""
+
+    def test_all_sources_listed_most_distinguishing_first(self):
+        assert Config().indexed_sources == ["Claude Code", "Kiro IDE", "Kiro CLI"]
+
+    def test_disabled_sources_omitted(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        config = Config(
+            claude=ClaudeSourceConfig(enabled=False),
+            cli=CLISourceConfig(enabled=False),
+        )
+        assert config.indexed_sources == ["Kiro IDE"]
+
+    def test_summary_without_label(self):
+        assert Config().instance_summary == (
+            "Indexes: Claude Code, Kiro IDE, Kiro CLI."
+        )
+
+    def test_summary_with_label(self):
+        config = Config(server=ServerConfig(instance_label="claude-history"))
+        assert config.instance_summary == (
+            'Instance "claude-history". Indexes: Claude Code, Kiro IDE, Kiro CLI.'
+        )
+
+    def test_label_whitespace_ignored(self):
+        config = Config(server=ServerConfig(instance_label="   "))
+        assert config.instance_summary.startswith("Indexes:")
+
+    def test_summary_when_everything_disabled(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        config = Config(
+            claude=ClaudeSourceConfig(enabled=False),
+            ide=IDESourceConfig(enabled=False),
+            cli=CLISourceConfig(enabled=False),
+        )
+        assert config.indexed_sources == []
+        assert "nothing (all sources are disabled)" in config.instance_summary
+
+    def test_two_instances_are_distinguishable(self):
+        from kiro_ception.config import ClaudeSourceConfig
+
+        claude_instance = Config(
+            server=ServerConfig(instance_label="claude-history")
+        )
+        kiro_instance = Config(
+            server=ServerConfig(instance_label="kiro-ception"),
+            claude=ClaudeSourceConfig(enabled=False),
+        )
+        assert claude_instance.instance_summary != kiro_instance.instance_summary
+        assert "Claude Code" in claude_instance.instance_summary
+        assert "Claude Code" not in kiro_instance.instance_summary
+
+    def test_label_defaults_to_empty(self):
+        assert Config().server.instance_label == ""
+
+    def test_label_parsed_from_toml(self):
+        config = Config.from_dict({"server": {"instance_label": "alt"}})
+        assert config.server.instance_label == "alt"
+        assert config.instance_summary.startswith('Instance "alt".')
+
+
+class TestAutoDerivedInstanceLabel:
+    """"auto" derives a label from resources that are unique per instance.
+
+    cache_dir is unique by construction (the engine lock lives there) and the
+    engine port is unique among running instances (only one process can bind
+    it), so either is a sound key.
+    """
+
+    def _config(self, cache_dir: str, port: int = 19742) -> Config:
+        return Config(
+            embedding=EmbeddingConfig(cache_dir=cache_dir),
+            server=ServerConfig(instance_label="auto", engine_port=port),
+        )
+
+    def test_derives_from_cache_dir_name(self):
+        config = self._config("~/.cache/claude-history")
+        assert config.resolved_instance_label == "claude-history"
+
+    def test_looks_past_a_generic_container_name(self):
+        # <root>/claude-history/cache — "cache" identifies nothing.
+        config = self._config("/opt/claude-history/cache")
+        assert config.resolved_instance_label == "claude-history"
+
+    def test_leading_dot_stripped(self):
+        config = self._config("/opt/.claude-history")
+        assert config.resolved_instance_label == "claude-history"
+
+    def test_falls_back_to_port_when_all_names_are_generic(self):
+        config = self._config("/var/cache", port=19761)
+        assert config.resolved_instance_label == "port-19761"
+
+    def test_two_instances_derive_different_labels(self):
+        a = self._config("~/.cache/kiro-ception", port=19742)
+        b = self._config("~/.cache/claude-history", port=19761)
+        assert a.resolved_instance_label != b.resolved_instance_label
+
+    def test_derived_label_reaches_the_summary(self):
+        config = self._config("~/.cache/claude-history")
+        assert config.instance_summary.startswith('Instance "claude-history".')
+
+    def test_explicit_label_wins_over_auto(self):
+        config = Config(
+            embedding=EmbeddingConfig(cache_dir="~/.cache/claude-history"),
+            server=ServerConfig(instance_label="my-name"),
+        )
+        assert config.resolved_instance_label == "my-name"
+
+    def test_empty_stays_unlabelled(self):
+        config = Config(embedding=EmbeddingConfig(cache_dir="~/.cache/whatever"))
+        assert config.resolved_instance_label == ""
+        assert config.instance_summary.startswith("Indexes:")
+
+    def test_derivation_is_stable_across_calls(self):
+        config = self._config("~/.cache/claude-history")
+        assert config.resolved_instance_label == config.resolved_instance_label
+
+
 # --- Config.engine_log_path ---
 
 
@@ -107,13 +232,13 @@ class TestEngineLogPath:
     def test_isolated_instance_resolves_from_toml(self):
         config = Config.from_dict(
             {
-                "embedding": {"cache_dir": "~/.cache/claude-rearview"},
+                "embedding": {"cache_dir": "~/.cache/claude-history"},
                 "server": {"engine_port": 19761, "engine_log_file": "auto"},
             }
         )
         assert config.server.engine_port == 19761
         assert config.engine_log_path == expand_path(
-            "~/.cache/claude-rearview/engine.log"
+            "~/.cache/claude-history/engine.log"
         )
 
 

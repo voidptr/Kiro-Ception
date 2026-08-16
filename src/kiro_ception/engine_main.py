@@ -559,6 +559,12 @@ def main():
                 "python": _platform.python_version(),
                 "platform": f"{_platform.system()} {_platform.machine()}",
             },
+            "instance": {
+                "label": current_config.resolved_instance_label or None,
+                "label_setting": current_config.server.instance_label or None,
+                "summary": current_config.instance_summary,
+                "indexes": current_config.indexed_sources,
+            },
             "paths": {
                 "config_file": str(get_config_file()),
                 "config_exists": get_config_file().exists(),

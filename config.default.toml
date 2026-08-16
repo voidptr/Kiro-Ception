@@ -145,6 +145,22 @@ heartbeat_interval_seconds = 30
 # Raise this to trade a slower MCP startup for a ready-on-first-call engine.
 # engine_startup_timeout_seconds = 90
 
+# Short name distinguishing this instance from others running alongside it.
+# Concurrent instances expose identical tool names and docstrings, so when set
+# this is quoted in every tool description to tell them apart, e.g.
+#   Instance "claude-history". Indexes: Claude Code, Kiro IDE, Kiro CLI.
+# This is a discriminator only — the server is always named "kiro-ception".
+#
+#   ""       (default) unlabelled; descriptions carry a bare "Indexes: ..."
+#   "auto"   derive it — uses the cache_dir name (skipping generic container
+#            names like "cache"), falling back to "port-<engine_port>".
+#            Both are unique per instance by construction: the engine lock
+#            lives in cache_dir, and only one process can bind the port.
+#   "<name>" use this literal name
+#
+# Applied at startup, so restart to pick up a change.
+# instance_label = "auto"
+
 # Where the engine writes its log.
 #   "auto"  (default) -> <cache_dir>/engine.log, so each instance logs into its
 #                        own cache directory and concurrent instances never

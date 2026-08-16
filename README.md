@@ -177,6 +177,47 @@ To disable Claude indexing entirely, set `enabled = false`.
 
 The `source` parameter on `search_global_history` accepts `"claude"` alongside `"cli"` and `"ide"`. Leave it at `"all"` (the default) to search everything.
 
+### Telling Concurrent Instances Apart
+
+Instances are selected by the **key** you give them in `mcpServers` — Claude Code namespaces tools as `mcp__<key>__<tool>`, so two entries never collide no matter what the servers call themselves internally:
+
+```
+"kiro-ception":    { ... }   →  mcp__kiro-ception__search_project_history
+"claude-history": { ... }   →  mcp__claude-history__search_project_history
+```
+
+Routing is only half the problem, though. Every instance exposes the *same* tool names with the *same* docstrings, so nothing tells a caller — or the agent — which one indexes what. Set `instance_label` and each instance says so itself:
+
+```toml
+[server]
+instance_label = "auto"     # or a literal name like "claude-history"
+```
+
+`"auto"` derives the name rather than making you invent one, keying off resources that are unique per instance by construction: the `cache_dir` name (skipping generic container names like `cache`, so both `~/.cache/claude-history` and `<root>/claude-history/cache` yield `claude-history`), falling back to `port-<engine_port>`. Both keys are enforced rather than conventional — the engine lock lives in `cache_dir`, so two instances cannot share one, and only one process can bind a port.
+
+The label is appended to every tool description, derived from the sources actually enabled:
+
+```
+Instance "claude-history". Indexes: Claude Code, Kiro IDE, Kiro CLI.
+```
+
+An instance with `[sources.claude] enabled = false` advertises `Indexes: Kiro IDE, Kiro CLI.` instead — so the difference is visible at tool-selection time, before anything is called.
+
+The same information is queryable at runtime via the `get_config` tool (or `GET /config`), which returns an `instance` block alongside `paths` and `sources`:
+
+```json
+"instance": {
+  "label": "claude-history",
+  "label_setting": "auto",
+  "summary": "Instance \"claude-history\". Indexes: Claude Code, Kiro IDE, Kiro CLI.",
+  "indexes": ["Claude Code", "Kiro IDE", "Kiro CLI"]
+}
+```
+
+`label` is the resolved name; `label_setting` is what the config asked for, so you can see whether a name was derived or pinned.
+
+`instance_label` is a discriminator, not a rename — the server is always named `kiro-ception`, whichever instance you are talking to. It is applied when the MCP process starts, so restart the server after changing it. Leaving it empty preserves the original behaviour: descriptions carry the bare `Indexes: ...` line.
+
 ### Workspace Detection
 
 `search_project_history` scopes to the current workspace, resolved in this order:

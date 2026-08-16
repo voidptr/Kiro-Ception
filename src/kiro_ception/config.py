@@ -196,6 +196,15 @@ class ServerConfig:
     # exceeding it is not fatal — the engine keeps starting in the background
     # and later tool calls pick it up once it is listening.
     engine_startup_timeout_seconds: int = 30
+    # Short name distinguishing this instance from other instances running
+    # alongside it. Appended to every tool description, since concurrent
+    # instances otherwise expose identical tool names and docstrings. This is
+    # a discriminator only — it does not rename the server, which stays
+    # "kiro-ception".
+    #   ""       = unlabelled (upstream default)
+    #   "auto"   = derive from cache_dir, falling back to the engine port
+    #   "<name>" = use this literal name
+    instance_label: str = ""
     # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
     # or an explicit path. "auto" keeps the log inside the instance's own
     # cache directory so concurrent instances never share a log file.
@@ -222,6 +231,19 @@ class ToolSummariesConfig:
     include_meaningful_output: bool = True  # Whether to excerpt Meaningful_Results into summaries
 
 
+# Display names for each conversation source, in the order they appear in
+# instance summaries. Most-distinguishing source first.
+_SOURCE_LABELS: tuple[tuple[str, str], ...] = (
+    ("claude", "Claude Code"),
+    ("ide", "Kiro IDE"),
+    ("cli", "Kiro CLI"),
+)
+
+# Container directory names that identify no particular instance, so an
+# auto-derived label looks past them to the parent.
+_GENERIC_DIR_NAMES = frozenset({"cache", "data", "var", "tmp", "store"})
+
+
 @dataclass
 class Config:
     """Main configuration."""
@@ -236,6 +258,58 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     tool_summaries: ToolSummariesConfig = field(default_factory=ToolSummariesConfig)
+
+    @property
+    def indexed_sources(self) -> list[str]:
+        """Display names of the conversation sources this instance indexes."""
+        enabled = {
+            "claude": self.claude.enabled,
+            "ide": self.ide.enabled,
+            "cli": self.cli.enabled,
+        }
+        return [label for key, label in _SOURCE_LABELS if enabled[key]]
+
+    def derive_instance_label(self) -> str:
+        """Derive a stable label from this instance's own unique resources.
+
+        cache_dir is unique per instance by construction — the engine lock
+        lives there, so two instances cannot share one — which makes its name
+        a sound key. Generic container names are skipped in favour of the
+        parent, so both `~/.cache/claude-history` and
+        `<root>/claude-history/cache` derive "claude-history".
+
+        Falls back to the engine port, which is unique among *running*
+        instances because only one process can bind it.
+        """
+        path = self.embedding.cache_path
+        for part in (path.name, path.parent.name):
+            candidate = part.strip().lstrip(".")
+            if candidate and candidate.lower() not in _GENERIC_DIR_NAMES:
+                return candidate
+        return f"port-{self.server.engine_port}"
+
+    @property
+    def resolved_instance_label(self) -> str:
+        """The effective label: explicit, auto-derived, or empty."""
+        label = self.server.instance_label.strip()
+        if label == "auto":
+            return self.derive_instance_label()
+        return label
+
+    @property
+    def instance_summary(self) -> str:
+        """One-line statement of what this instance indexes.
+
+        Appended to every MCP tool description. Concurrent instances expose
+        tools with identical names and identical docstrings, so without this
+        a caller has no way to tell which instance a tool belongs to.
+        """
+        sources = self.indexed_sources
+        body = ", ".join(sources) if sources else "nothing (all sources are disabled)"
+        label = self.resolved_instance_label
+        if label:
+            return f'Instance "{label}". Indexes: {body}.'
+        return f"Indexes: {body}."
 
     @property
     def engine_log_path(self) -> Path | None:
@@ -344,6 +418,8 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("server.engine_startup_timeout_seconds",
          old.server.engine_startup_timeout_seconds,
          new.server.engine_startup_timeout_seconds),
+        # Applied to tool descriptions at import time — takes effect on restart.
+        ("server.instance_label", old.server.instance_label, new.server.instance_label),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.ide.enabled", old.ide.enabled, new.ide.enabled),
         ("sources.claude.enabled", old.claude.enabled, new.claude.enabled),

@@ -9,17 +9,57 @@ Architecture:
 - Engine process: HTTP server + indexer + search (separate PID, detached)
 """
 
+import inspect
 import os
+import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from .config import get_config as _get_config
-from .config import expand_path
+from .config import expand_path, set_config_file
 from .engine_client import ensure_engine_running, get_engine_client
 from .models import Source
 
+
+def _apply_config_override_from_argv() -> None:
+    """Honour --config before any import-time config read.
+
+    Tool descriptions and the conditional peer tool are decided while this
+    module is being imported, but main() does not parse --config until
+    afterwards. Without this, an instance started with --config would
+    register tools describing the *default* config rather than its own.
+    """
+    argv = sys.argv[1:]
+    for i, arg in enumerate(argv):
+        if arg == "--config" and i + 1 < len(argv):
+            set_config_file(argv[i + 1])
+            return
+        if arg.startswith("--config="):
+            set_config_file(arg.split("=", 1)[1])
+            return
+
+
+_apply_config_override_from_argv()
+
+# The server name is the product identity and is deliberately constant across
+# instances — server.instance_label distinguishes instances in tool
+# descriptions, it does not rename the server.
 mcp = FastMCP("kiro-ception")
+
+
+def _instance_tool(fn):
+    """Register an MCP tool, naming this instance's sources in its description.
+
+    Several Kiro-Ception instances can run side by side, and each exposes the
+    same tool names with the same docstrings. The description is therefore the
+    only signal a caller has for choosing between them, so every tool states
+    which sources its instance indexes.
+    """
+    doc = inspect.cleandoc(fn.__doc__ or "")
+    summary = _get_config().instance_summary
+    return mcp.tool(description=f"{doc}\n\n{summary}")(fn)
+
 
 # --- Initialization ---
 
@@ -81,7 +121,7 @@ def _get_current_workspace() -> str | None:
 # --- MCP Tools ---
 
 
-@mcp.tool()
+@_instance_tool
 def search_project_history(
     query: str,
     after: str | None = None,
@@ -136,7 +176,7 @@ def search_project_history(
     })
 
 
-@mcp.tool()
+@_instance_tool
 def search_global_history(
     query: str,
     after: str | None = None,
@@ -192,7 +232,7 @@ def search_global_history(
     })
 
 
-@mcp.tool()
+@_instance_tool
 def get_indexing_status() -> dict:
     """
     Get the current status of the background indexer and search readiness.
@@ -209,7 +249,7 @@ def get_indexing_status() -> dict:
         return {"error": "Engine unavailable", "state": "unknown"}
 
 
-@mcp.tool()
+@_instance_tool
 def rescan(full: bool = False) -> dict:
     """
     Trigger a rescan for new or changed conversations.
@@ -239,7 +279,7 @@ def rescan(full: bool = False) -> dict:
         return {"error": "Engine unavailable"}
 
 
-@mcp.tool()
+@_instance_tool
 def get_config() -> dict:
     """
     Get the current computed configuration for Kiro Ception.
@@ -247,8 +287,13 @@ def get_config() -> dict:
     Shows the effective configuration including defaults, user overrides,
     and computed values like the embedding backend fingerprint.
 
+    Use this to find out which conversation sources THIS instance indexes
+    (the "instance" block), and where its data lives on disk (the "paths"
+    block). When several instances run side by side, that is how you tell
+    them apart — every instance exposes these same tool names.
+
     Returns:
-        Full configuration details
+        Full configuration details, including instance identity and sources
     """
     _ensure_initialized()
     client = get_engine_client()
@@ -259,12 +304,18 @@ def get_config() -> dict:
         config = _get_config()
         return {
             "error": "Engine unavailable — showing local config only",
+            "instance": {
+                "label": config.resolved_instance_label or None,
+                "label_setting": config.server.instance_label or None,
+                "summary": config.instance_summary,
+                "indexes": config.indexed_sources,
+            },
             "embedding": {"backend": config.embedding.backend, "model": config.embedding.model},
             "server": {"engine_port": config.server.engine_port},
         }
 
 
-@mcp.tool()
+@_instance_tool
 def reload_config() -> dict:
     """
     Reload configuration from disk and apply safe changes immediately.
@@ -290,7 +341,7 @@ def reload_config() -> dict:
 _startup_config = _get_config()
 if _startup_config.peers.enabled and _startup_config.peers.debug_tool_enabled:
 
-    @mcp.tool()
+    @_instance_tool
     def search_peer_history(
         query: str,
         after: str | None = None,
