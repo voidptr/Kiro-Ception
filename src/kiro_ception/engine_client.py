@@ -30,7 +30,8 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s %(message)s"))
     logger.addHandler(handler)
 
-# How long to wait for a freshly-spawned engine to become healthy
+# Default wait for a freshly-spawned engine to become healthy. Overridable via
+# server.engine_startup_timeout_seconds — see _startup_timeout().
 _ENGINE_STARTUP_TIMEOUT = 30  # seconds
 _HEALTH_CHECK_TIMEOUT = 5  # seconds per health check attempt
 _HEALTH_CHECK_RETRIES = 2
@@ -38,6 +39,25 @@ _HEALTH_CHECK_RETRIES = 2
 # Fingerprint captured at process startup — represents what code this client loaded with.
 # This never changes for the lifetime of this process.
 _CLIENT_STARTUP_FINGERPRINT = None
+
+
+def _startup_timeout() -> int:
+    """Seconds to wait for a spawned engine to answer its first health check.
+
+    Cold starts preload torch and the embedding model and can exceed the
+    default on slower machines, so this is configurable. Overrunning it is not
+    fatal: the engine keeps starting in the background and later tool calls
+    reach it once it is listening — the wait exists so that the common case
+    returns a ready engine rather than a transient failure.
+
+    Falls back to the default if config cannot be read or holds a
+    non-positive value.
+    """
+    try:
+        configured = get_config().server.engine_startup_timeout_seconds
+    except Exception:
+        return _ENGINE_STARTUP_TIMEOUT
+    return configured if configured and configured > 0 else _ENGINE_STARTUP_TIMEOUT
 
 
 def _get_client_fingerprint() -> str:
@@ -204,7 +224,8 @@ def spawn_engine() -> bool:
     logger.info(f"Engine subprocess launched (spawned_pid={spawned_pid}), polling for health...")
 
     # Poll engine.json for a FRESH engine (started_at > spawn_time) to appear.
-    deadline = time.time() + _ENGINE_STARTUP_TIMEOUT
+    startup_timeout = _startup_timeout()
+    deadline = time.time() + startup_timeout
     while time.time() < deadline:
         time.sleep(0.5)
 
@@ -234,7 +255,10 @@ def spawn_engine() -> bool:
             return True
 
     logger.error(
-        f"Engine did not become healthy within {_ENGINE_STARTUP_TIMEOUT}s"
+        f"Engine did not become healthy within {startup_timeout}s. It is "
+        f"probably still cold-starting (torch + embedding model load) and "
+        f"later calls should reach it. Raise "
+        f"server.engine_startup_timeout_seconds to wait longer."
     )
     # Last-ditch: one more check without the timestamp guard (maybe clock skew)
     info = _read_engine_info()

@@ -154,6 +154,13 @@ class ServerConfig:
     listen_address: str = ""  # Bind address ("" = auto: 0.0.0.0 if peers enabled, else 127.0.0.1)
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
+    # Seconds to wait for a newly spawned engine to answer its first health
+    # check. A cold start preloads torch and the embedding model, which can
+    # take a minute or more on some machines. Raising this makes the MCP
+    # process block longer during startup, which is why the default is short:
+    # exceeding it is not fatal — the engine keeps starting in the background
+    # and later tool calls pick it up once it is listening.
+    engine_startup_timeout_seconds: int = 30
     # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
     # or an explicit path. "auto" keeps the log inside the instance's own
     # cache directory so concurrent instances never share a log file.
@@ -296,6 +303,9 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("memory.fraction", old.memory.fraction, new.memory.fraction),
         ("memory.limit_mb", old.memory.limit_mb, new.memory.limit_mb),
         ("server.engine_port", old.server.engine_port, new.server.engine_port),
+        ("server.engine_startup_timeout_seconds",
+         old.server.engine_startup_timeout_seconds,
+         new.server.engine_startup_timeout_seconds),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.ide.enabled", old.ide.enabled, new.ide.enabled),
         ("peers.enabled", old.peers.enabled, new.peers.enabled),
