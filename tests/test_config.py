@@ -16,6 +16,58 @@ from kiro_ception.config import (
 )
 
 
+# --- Engine startup timeout ---
+
+
+class TestEngineStartupTimeout:
+    """Cold starts (torch + embedding model) can exceed the default wait.
+
+    Overrunning is not fatal â€” the engine keeps starting and later calls reach
+    it â€” so the default stays short to avoid blocking MCP startup, but it has
+    to be raisable on slow machines.
+    """
+
+    def test_default_is_thirty_seconds(self):
+        assert Config().server.engine_startup_timeout_seconds == 30
+
+    def test_configurable_from_toml(self):
+        config = Config.from_dict({"server": {"engine_startup_timeout_seconds": 90}})
+        assert config.server.engine_startup_timeout_seconds == 90
+
+    def test_change_is_hot_reloadable(self):
+        old = Config()
+        new = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        changes = diff_configs(old, new)
+        change = next(
+            c for c in changes if c["key"] == "server.engine_startup_timeout_seconds"
+        )
+        assert change["impact"] == "safe"
+
+    def test_client_reads_the_configured_value(self, monkeypatch):
+        from kiro_ception import engine_client
+
+        config = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        monkeypatch.setattr(engine_client, "get_config", lambda: config)
+        assert engine_client._startup_timeout() == 90
+
+    def test_client_falls_back_when_value_is_nonsense(self, monkeypatch):
+        from kiro_ception import engine_client
+
+        for bad in (0, -5):
+            config = Config(server=ServerConfig(engine_startup_timeout_seconds=bad))
+            monkeypatch.setattr(engine_client, "get_config", lambda c=config: c)
+            assert engine_client._startup_timeout() == 30
+
+    def test_client_falls_back_when_config_unreadable(self, monkeypatch):
+        from kiro_ception import engine_client
+
+        def boom():
+            raise RuntimeError("no config")
+
+        monkeypatch.setattr(engine_client, "get_config", boom)
+        assert engine_client._startup_timeout() == 30
+
+
 # --- Config.engine_log_path ---
 
 
