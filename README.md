@@ -300,10 +300,10 @@ engine_startup_timeout_seconds = 90
 
 #### Debugging an instance with no client attached
 
-`tools/debug_engine.py` holds an engine open when there is **no MCP client** — for verifying a new instance's isolation before registering it, headless/CI runs, or watching a first index without opening an editor. It is a development tool, not part of normal operation:
+`scripts/debug-engine.py` holds an engine open when there is **no MCP client** — for verifying a new instance's isolation before registering it, headless/CI runs, or watching a first index without opening an editor. It is a development tool, not part of normal operation:
 
 ```bash
-python tools/debug_engine.py --config "$ROOT/config.toml"
+python scripts/debug-engine.py --config "$ROOT/config.toml"
 
 curl -s http://127.0.0.1:<engine_port>/status    # indexing progress, search readiness
 curl -s http://127.0.0.1:<engine_port>/config    # instance identity and every local path

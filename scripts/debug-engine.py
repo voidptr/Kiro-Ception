@@ -35,7 +35,7 @@ last follower is gone and shuts down cleanly on its own.
 
 USAGE
 -----
-    python tools/debug_engine.py --config /path/to/config.toml [--interval 30]
+    python scripts/debug-engine.py --config /path/to/config.toml [--interval 30]
 
     # then, from anywhere:
     curl -s http://127.0.0.1:<engine_port>/status
