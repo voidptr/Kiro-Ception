@@ -52,19 +52,54 @@ def find_first_existing(paths: list[str]) -> Path | None:
 
 @dataclass
 class CLISourceConfig:
-    """CLI source configuration."""
+    """CLI source configuration.
+
+    Kiro CLI has stored conversations two ways over time, and this source reads
+    both so no history is lost across the format change:
+
+    - **SQLite (legacy):** a ``data.sqlite3`` with a ``conversations_v2`` table.
+      Configured via ``paths`` / :pyattr:`database_path` (first existing wins).
+    - **JSONL (current):** one ``<session_id>.jsonl`` transcript per session
+      under a ``sessions/cli`` directory, with a companion ``<session_id>.json``
+      sidecar carrying the workspace (``cwd``) and timestamps. Configured via
+      ``session_roots`` (every existing root is scanned, like the Claude source).
+
+    Sessions from both are unioned and de-duplicated by ``session_id``; when the
+    same id appears in both, the JSONL transcript wins since it is the current
+    format. Either sub-source can be pointed at nothing (its paths simply do not
+    exist) without disabling the other.
+    """
 
     enabled: bool = True
+    # Legacy SQLite database locations (first existing wins).
     paths: list[str] = field(default_factory=lambda: [
         "~/Library/Application Support/kiro-cli/data.sqlite3",
         "~/.local/share/kiro-cli/data.sqlite3",
         "~/AppData/Roaming/kiro-cli/data.sqlite3",
+        "~/AppData/Local/Kiro-Cli/data.sqlite3",
     ])
+    # Current JSONL session-store roots (every existing root is scanned).
+    session_roots: list[str] = field(default_factory=lambda: [
+        "~/.kiro/sessions/cli",
+    ])
+    # Extended thinking blocks: valuable but verbose, so off by default.
+    include_thinking: bool = False
+    # Condense toolUse/toolResult pairs into tool-context summaries.
+    include_tool_context: bool = True
 
     @property
     def database_path(self) -> Path | None:
-        """Get first existing database path."""
+        """Get first existing legacy SQLite database path (or None)."""
         return find_first_existing(self.paths)
+
+    def get_session_roots(self) -> list[Path]:
+        """Return every configured JSONL session root that exists on disk."""
+        roots: list[Path] = []
+        for root in self.session_roots:
+            expanded = expand_path(root)
+            if expanded.is_dir() and expanded not in roots:
+                roots.append(expanded)
+        return roots
 
 
 @dataclass
@@ -421,6 +456,10 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         # Applied to tool descriptions at import time — takes effect on restart.
         ("server.instance_label", old.server.instance_label, new.server.instance_label),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
+        ("sources.cli.paths", old.cli.paths, new.cli.paths),
+        ("sources.cli.session_roots", old.cli.session_roots, new.cli.session_roots),
+        ("sources.cli.include_thinking", old.cli.include_thinking, new.cli.include_thinking),
+        ("sources.cli.include_tool_context", old.cli.include_tool_context, new.cli.include_tool_context),
         ("sources.ide.enabled", old.ide.enabled, new.ide.enabled),
         ("sources.claude.enabled", old.claude.enabled, new.claude.enabled),
         ("sources.claude.roots", old.claude.roots, new.claude.roots),

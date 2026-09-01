@@ -340,6 +340,20 @@ class TestExecutionLogLoading:
 
 
 class TestCLILoading:
+    @pytest.fixture(autouse=True)
+    def _isolate_jsonl(self):
+        """Keep the SQLite-focused tests hermetic.
+
+        list_cli_sessions() now unions the JSONL session store with the legacy
+        SQLite DB. These tests only exercise the SQLite path, so stub the JSONL
+        roots to empty — otherwise they'd pick up the developer's real
+        ~/.kiro/sessions/cli and the counts would be non-deterministic.
+        """
+        with patch(
+            "kiro_ception.cli_loader._list_jsonl_sessions", return_value=[]
+        ):
+            yield
+
     @pytest.fixture
     def cli_db(self, tmp_path):
         """Create a temporary CLI SQLite database with test data."""
@@ -472,6 +486,209 @@ class TestCLILoading:
             sessions = list_cli_sessions()
 
         assert sessions == []
+
+
+# --- CLI JSONL session store (current format) ---
+
+
+class TestCLIJsonlLoading:
+    """Covers the current Kiro CLI JSONL session store + .json sidecar."""
+
+    def _write_session(self, root: Path, session_id: str, cwd: str,
+                       lines: list[dict], created: str, updated: str) -> Path:
+        """Write a <session_id>.jsonl transcript and its .json sidecar."""
+        transcript = root / f"{session_id}.jsonl"
+        with open(transcript, "w", encoding="utf-8") as f:
+            for rec in lines:
+                f.write(json.dumps(rec) + "\n")
+        sidecar = root / f"{session_id}.json"
+        sidecar.write_text(json.dumps({
+            "session_id": session_id,
+            "cwd": cwd,
+            "created_at": created,
+            "updated_at": updated,
+        }), encoding="utf-8")
+        return transcript
+
+    @pytest.fixture
+    def jsonl_root(self, tmp_path):
+        root = tmp_path / "sessions" / "cli"
+        root.mkdir(parents=True)
+        self._write_session(
+            root, "sess-jsonl-1", "/Users/dev/proj",
+            lines=[
+                {"version": "v1", "kind": "Prompt", "data": {
+                    "message_id": "m1",
+                    "content": [{"kind": "text", "data": "Find the bug in parser.py"}],
+                    "meta": {"timestamp": 1717236000,
+                             "additionalContext": "emit your current mood as Mood[...]"},
+                }},
+                {"version": "v1", "kind": "AssistantMessage", "data": {
+                    "message_id": "m2",
+                    "content": [
+                        {"kind": "thinking", "data": {"text": "secret reasoning"}},
+                        {"kind": "text", "data": "The bug is a missing return."},
+                        {"kind": "toolUse", "data": {
+                            "toolUseId": "t1", "name": "read_file",
+                            "input": {"path": "parser.py"}}},
+                    ],
+                }},
+                {"version": "v1", "kind": "ToolResults", "data": {
+                    "message_id": "m3",
+                    "content": [{"kind": "toolResult", "data": {
+                        "toolUseId": "t1",
+                        "content": [{"kind": "text", "data": "def parse(): pass"}],
+                        "status": "success"}}],
+                }},
+            ],
+            created="2026-06-01T10:00:00.000Z",
+            updated="2026-06-01T10:05:00.000Z",
+        )
+        return root
+
+    def test_list_jsonl_sessions_from_sidecar(self, jsonl_root):
+        with patch("kiro_ception.cli_loader.get_config") as gc:
+            gc.return_value.cli.get_session_roots.return_value = [jsonl_root]
+            gc.return_value.cli.database_path = None
+            from kiro_ception.cli_loader import _list_jsonl_sessions
+
+            sessions = _list_jsonl_sessions()
+
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s.session_id == "sess-jsonl-1"
+        assert s.workspace == "/Users/dev/proj"       # from sidecar cwd
+        assert s.source == Source.CLI
+        # modified comes from sidecar updated_at, not file mtime
+        assert s.modified is not None
+
+    def test_jsonl_messages_and_exclusions(self, jsonl_root):
+        from kiro_ception.cli_loader import _build_jsonl_session, _load_jsonl_messages
+
+        transcript = jsonl_root / "sess-jsonl-1.jsonl"
+        with patch("kiro_ception.cli_loader.get_config") as gc:
+            gc.return_value.cli.get_session_roots.return_value = [jsonl_root]
+            gc.return_value.cli.include_thinking = False
+            gc.return_value.cli.include_tool_context = True
+            gc.return_value.tool_summaries.excluded_tools = []
+            gc.return_value.tool_summaries.max_summary_length = 800
+            gc.return_value.tool_summaries.include_meaningful_output = True
+            session = _build_jsonl_session(transcript)
+            messages = _load_jsonl_messages(session, transcript)
+
+        user = [m for m in messages if m.role == "user"]
+        assert len(user) == 1
+        # additionalContext (hook plumbing) must NOT be indexed
+        assert "mood" not in user[0].searchable_text.lower()
+        assert "Find the bug" in user[0].searchable_text
+
+        convo = [m for m in messages if m.content_tier.value == "conversation"
+                 and m.role == "assistant"]
+        assert len(convo) == 1
+        # thinking block excluded, text kept
+        assert "secret reasoning" not in convo[0].searchable_text
+        assert "missing return" in convo[0].searchable_text
+
+        tool_ctx = [m for m in messages if m.content_tier.value == "tool_context"]
+        assert len(tool_ctx) == 1
+        assert "read_file" in tool_ctx[0].searchable_text
+        assert tool_ctx[0].tool_name == "read_file"
+
+    def test_jsonl_thinking_included_when_enabled(self, jsonl_root):
+        from kiro_ception.cli_loader import _build_jsonl_session, _load_jsonl_messages
+
+        transcript = jsonl_root / "sess-jsonl-1.jsonl"
+        with patch("kiro_ception.cli_loader.get_config") as gc:
+            gc.return_value.cli.get_session_roots.return_value = [jsonl_root]
+            gc.return_value.cli.include_thinking = True
+            gc.return_value.cli.include_tool_context = False
+            session = _build_jsonl_session(transcript)
+            messages = _load_jsonl_messages(session, transcript)
+
+        assistant_text = " ".join(
+            m.searchable_text for m in messages if m.role == "assistant"
+        )
+        assert "secret reasoning" in assistant_text
+
+    def test_jsonl_tolerates_truncated_final_line(self, tmp_path):
+        """A live-appended transcript may end mid-record; must not raise."""
+        root = tmp_path / "sessions" / "cli"
+        root.mkdir(parents=True)
+        transcript = root / "partial.jsonl"
+        good = {"version": "v1", "kind": "Prompt", "data": {
+            "content": [{"kind": "text", "data": "hello"}],
+            "meta": {"timestamp": 1717236000}}}
+        with open(transcript, "w", encoding="utf-8") as f:
+            f.write(json.dumps(good) + "\n")
+            f.write('{"version": "v1", "kind": "Assistant')  # truncated
+        (root / "partial.json").write_text(json.dumps({
+            "session_id": "partial", "cwd": "/w",
+            "created_at": "2026-06-01T00:00:00Z",
+            "updated_at": "2026-06-01T00:01:00Z"}), encoding="utf-8")
+
+        with patch("kiro_ception.cli_loader.get_config") as gc:
+            gc.return_value.cli.get_session_roots.return_value = [root]
+            gc.return_value.cli.include_thinking = False
+            gc.return_value.cli.include_tool_context = True
+            from kiro_ception.cli_loader import _build_jsonl_session, _load_jsonl_messages
+
+            session = _build_jsonl_session(transcript)
+            messages = _load_jsonl_messages(session, transcript)
+
+        # The good line parses; the truncated one is skipped, no exception.
+        assert any("hello" in m.searchable_text for m in messages)
+
+    def test_jsonl_missing_sidecar_falls_back(self, tmp_path):
+        """No sidecar: workspace/timestamps fall back to header + file mtime."""
+        root = tmp_path / "sessions" / "cli"
+        root.mkdir(parents=True)
+        transcript = root / "nosidecar.jsonl"
+        with open(transcript, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"version": "v1", "kind": "Prompt", "data": {
+                "content": [{"kind": "text", "data": "hi"}],
+                "meta": {"timestamp": 1717236000}}}) + "\n")
+
+        from kiro_ception.cli_loader import _build_jsonl_session
+
+        session = _build_jsonl_session(transcript)
+        assert session is not None
+        assert session.session_id == "nosidecar"
+        # No cwd available anywhere -> empty workspace, but still usable
+        assert session.modified is not None
+
+    def test_union_dedup_prefers_jsonl(self, tmp_path):
+        """When a session_id exists in both stores, JSONL wins; others union."""
+        root = tmp_path / "sessions" / "cli"
+        root.mkdir(parents=True)
+        self._write_session(
+            root, "dupe", "/from/jsonl",
+            lines=[{"version": "v1", "kind": "Prompt", "data": {
+                "content": [{"kind": "text", "data": "x"}],
+                "meta": {"timestamp": 1717236000}}}],
+            created="2026-06-01T00:00:00Z", updated="2026-06-01T00:01:00Z")
+
+        jsonl_sessions = [
+            SessionInfo(session_id="dupe", workspace="/from/jsonl",
+                        source=Source.CLI, modified=datetime(2026, 6, 1)),
+        ]
+        sqlite_sessions = [
+            SessionInfo(session_id="dupe", workspace="/from/sqlite",
+                        source=Source.CLI, modified=datetime(2026, 5, 1)),
+            SessionInfo(session_id="sqlite-only", workspace="/from/sqlite",
+                        source=Source.CLI, modified=datetime(2026, 5, 2)),
+        ]
+        with patch("kiro_ception.cli_loader._list_jsonl_sessions",
+                   return_value=jsonl_sessions), \
+             patch("kiro_ception.cli_loader._list_sqlite_sessions",
+                   return_value=sqlite_sessions):
+            from kiro_ception.cli_loader import list_cli_sessions
+
+            sessions = list_cli_sessions()
+
+        by_id = {s.session_id: s for s in sessions}
+        assert set(by_id) == {"dupe", "sqlite-only"}
+        # JSONL won the collision
+        assert by_id["dupe"].workspace == "/from/jsonl"
 
 
 # --- Loader facade ---
