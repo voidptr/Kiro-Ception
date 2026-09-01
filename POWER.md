@@ -1,15 +1,17 @@
 ---
-name: "kiro-ception"
+name: "kiro-ception-rearview"
 version: "1.0.9"
-displayName: "Kiro Ception"
-description: "Access all Kiro CLI and IDE conversation history as searchable memory - recall past discussions by meaning, actions, responses, and date"
+displayName: "Kiro Ception Rearview"
+description: "Access all Kiro CLI, Kiro IDE, and Claude Code conversation history as searchable memory - recall past discussions by meaning, actions, responses, and date"
 keywords: ["history", "recall", "remember", "remind", "remind me", "past conversation", "previous chat", "what did we discuss", "how did we", "like we discussed", "as I mentioned", "what did we", "what were those", "we implemented", "we built", "we did", "we added", "we changed", "we fixed", "we decided", "previously", "last time", "earlier", "before", "that thing we", "what was that", "what approach", "how did I", "where did we leave off", "yesterday", "last week", "recently", "I don't remember", "I forget", "didn't we already", "same as we did", "why did we choose", "what was the reasoning", "what was the solution"]
-author: "Farley Farley via DevOps-Nirvana (originally by Danilo Poccia)"
+author: "voidptr — fork of Kiro Ception by Farley Farley (DevOps-Nirvana), originally by Danilo Poccia"
 ---
 
-# Kiro Ception
+# Kiro Ception Rearview
 
-Total recall for Kiro — persistent memory that spans every session, every window, CLI and IDE, and even across multiple machines. Automatically indexes all conversation history in the background and provides instant hybrid search (semantic + keyword) so the agent can find past discussions by meaning, keywords, date, or any combination.
+Total recall for Kiro — persistent memory that spans every session, every window, CLI and IDE, plus Claude Code transcripts, and even across multiple machines. Automatically indexes all conversation history in the background and provides instant hybrid search (semantic + keyword) so the agent can find past discussions by meaning, keywords, date, or any combination.
+
+This is a fork of [Kiro Ception](https://github.com/DevOps-Nirvana/Kiro-Ception) that adds a configurable Claude Code source and reads the current Kiro CLI JSONL session store alongside everything upstream indexes.
 
 ## Important: Background Indexing
 
@@ -147,7 +149,7 @@ User: "Re-index everything from scratch"
 | Tool | Scope | Use Case |
 |------|-------|----------|
 | `search_project_history` | Current workspace | Bugs, decisions, implementations in *this* codebase |
-| `search_global_history` | All workspaces | User preferences, patterns across *all* work. Optional `source` param: `"all"` (default), `"cli"`, or `"ide"` |
+| `search_global_history` | All workspaces | User preferences, patterns across *all* work. Optional `source` param: `"all"` (default), `"cli"`, `"ide"`, or `"claude"` |
 
 ### Management Tools
 
@@ -170,7 +172,7 @@ All search tools accept:
 - `offset` (default: 0): Skip results for pagination
 
 Additionally, `search_global_history` accepts:
-- `source` (default: "all"): Filter by source — `"all"`, `"cli"`, or `"ide"`. Only use `"cli"` or `"ide"` if the user explicitly asks to search only CLI or IDE conversations.
+- `source` (default: "all"): Filter by source — `"all"`, `"cli"`, `"ide"`, or `"claude"`. Only narrow the source if the user explicitly asks to search only Kiro CLI, only Kiro IDE, or only Claude Code conversations.
 
 ## Date Filtering Examples
 
@@ -194,7 +196,7 @@ search_global_history(query="deployment issue", after="2026-06-03")
 - Results include **context** (surrounding messages)
 - Use `offset` to paginate when `has_more` is true
 - Higher scores (closer to 1.0) = better semantic matches
-- The `source` field shows whether a result is from CLI or IDE
+- The `source` field shows whether a result is from Kiro CLI, Kiro IDE, or Claude Code
 - If results seem incomplete, check `get_indexing_status` — indexing may still be in progress
 - Use `rescan()` to immediately pick up recent conversations
 - Use `rescan(full=True)` after changing message filter rules
@@ -202,13 +204,13 @@ search_global_history(query="deployment issue", after="2026-06-03")
 - For project-specific questions, prefer `search_project_history` (narrows to current workspace)
 - For cross-project or preference questions, use `search_global_history`
 - When the user mentions a specific project name, include it in the query
-- If the database is corrupt or search returns garbage, the user can reset with: `rm -rf ~/.cache/kiro-ception/` then restart Kiro
+- If the database is corrupt or search returns garbage, the user can reset by deleting this instance's cache directory (find it via `get_config` → `paths.cache_dir`) and restarting Kiro
 
 ## License and Support
 
-This power is licensed under the [MIT License](https://github.com/DevOps-Nirvana/Kiro-Ception/blob/main/LICENSE).
+This power is licensed under the [MIT License](https://github.com/voidptr/Kiro-Ception/blob/main/LICENSE). It is a fork of [DevOps-Nirvana/Kiro-Ception](https://github.com/DevOps-Nirvana/Kiro-Ception).
 
 **Privacy:** All data is processed and stored locally on your machine. No telemetry, no external API calls, and no data leaves your device — unless you explicitly configure a third-party embedding provider (e.g., OpenAI). The default configuration uses fully local, offline embeddings.
 
-- [Privacy & Data Locations](https://github.com/DevOps-Nirvana/Kiro-Ception#data-locations)
-- [Support & Issues](https://github.com/DevOps-Nirvana/Kiro-Ception/issues)
+- [Privacy & Data Locations](https://github.com/voidptr/Kiro-Ception#data-locations)
+- [Support & Issues](https://github.com/voidptr/Kiro-Ception/issues)
