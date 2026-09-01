@@ -1,0 +1,41 @@
+{
+  "name": "kiro-ception-rearview",
+  "displayName": "Kiro Ception Rearview",
+  "version": "1.0.9",
+  "description": "Access all Kiro CLI, Kiro IDE, and Claude Code conversation history as searchable memory - recall past discussions by meaning, actions, responses, and date",
+  "author": "voidptr",
+  "mcpServers": {
+    "kiro-ception-rearview": {
+      "command": "uv",
+      "args": [
+        "tool",
+        "run",
+        "--from",
+        "git+https://github.com/voidptr/Kiro-Ception",
+        "kiro-ception"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "get_indexing_status",
+        "search_global_history",
+        "search_project_history",
+        "rescan",
+        "get_config"
+      ]
+    }
+  },
+  "keywords": [
+    "history",
+    "recall",
+    "remember",
+    "remind",
+    "past conversation",
+    "previous chat",
+    "what did we discuss",
+    "like we discussed",
+    "where did we leave off",
+    "last time",
+    "claude code",
+    "kiro cli"
+  ]
+}

@@ -1,7 +1,22 @@
 {
   "mcpServers": {
-    "kiro-ception": {
-      "command": "/path/to/your/kiro-ception/folder/.venv/bin/kiro-ception"
+    "kiro-ception-rearview": {
+      "command": "uv",
+      "args": [
+        "tool",
+        "run",
+        "--from",
+        "git+https://github.com/voidptr/Kiro-Ception",
+        "kiro-ception"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "get_indexing_status",
+        "search_global_history",
+        "search_project_history",
+        "rescan",
+        "get_config"
+      ]
     }
   }
 }
