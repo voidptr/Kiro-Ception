@@ -143,12 +143,13 @@ tests/
 
 ## MCP Tools (Current)
 
-6 tools total:
+7 tools total:
 
 | Tool | Purpose |
 |------|---------|
 | `search_project_history` | Search current workspace |
 | `search_global_history` | Search all workspaces (optional `source` filter: all/cli/ide) |
+| `get_messages` | Fetch complete stored text by uuid (bypasses the 2000-char search cap) |
 | `get_indexing_status` | Check indexer progress/state |
 | `rescan` | Pick up new sessions (`full=True` to ignore mtime cache) |
 | `get_config` | Show config, paths, instance role, cache stats |

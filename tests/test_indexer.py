@@ -610,3 +610,108 @@ class TestSearchIndexRefresh:
             si.refresh_if_needed()
             # No error, no throttle — just no data
             assert si.message_count == 0
+
+
+# --- handle_message_request (full stored text by uuid) ---
+
+
+class TestHandleMessageRequest:
+    """The /message read path: fetch complete stored text, bypassing the
+    2000-char cap that search results apply."""
+
+    def _store(self, cache, uuid, text, tier="conversation", tool_name=None, idx=0):
+        cache.put_message(
+            uuid, "sess-1", "/project/alpha", time.time(), "assistant",
+            text, idx, "ide", hashlib.md5(text.encode()).hexdigest(),
+            tier, tool_name,
+        )
+        cache.conn.commit()
+
+    def _call(self, cache, request):
+        from kiro_ception.search import handle_message_request
+
+        with patch("kiro_ception.search.get_background_indexer") as mock_get_indexer:
+            indexer_mock = MagicMock()
+            indexer_mock.cache = cache
+            mock_get_indexer.return_value = indexer_mock
+            return handle_message_request(request)
+
+    def test_returns_full_text_beyond_display_cap(self, cache):
+        long_text = "y" * 7000
+        self._store(cache, "m1", long_text)
+
+        response = self._call(cache, {"uuids": ["m1"]})
+
+        assert response["status"] == "ok"
+        assert response["messages"][0]["content"] == long_text
+        assert len(response["messages"][0]["content"]) == 7000
+
+    def test_includes_locating_metadata(self, cache):
+        self._store(cache, "m1", "hello", idx=4)
+
+        msg = self._call(cache, {"uuids": ["m1"]})["messages"][0]
+
+        assert msg["uuid"] == "m1"
+        assert msg["role"] == "assistant"
+        assert msg["session_id"] == "sess-1"
+        assert msg["workspace"] == "/project/alpha"
+        assert msg["message_index"] == 4
+        assert msg["source"] == "ide"
+        assert msg["content_tier"] == "conversation"
+        assert "T" in msg["timestamp"]  # ISO formatted
+
+    def test_missing_uuids_reported_not_raised(self, cache):
+        self._store(cache, "m1", "hello")
+
+        response = self._call(cache, {"uuids": ["m1", "ghost"]})
+
+        assert [m["uuid"] for m in response["messages"]] == ["m1"]
+        assert response["not_found"] == ["ghost"]
+
+    def test_accepts_bare_string_uuid(self, cache):
+        self._store(cache, "m1", "hello")
+
+        response = self._call(cache, {"uuids": "m1"})
+
+        assert [m["uuid"] for m in response["messages"]] == ["m1"]
+
+    def test_missing_uuids_key_returns_empty(self, cache):
+        response = self._call(cache, {})
+
+        assert response["status"] == "ok"
+        assert response["messages"] == []
+        assert response["not_found"] == []
+
+    def test_tool_context_carries_index_time_truncation_note(self, cache):
+        """tool_context rows were capped before storage, so the caller must be
+        told that this text is still not the full original."""
+        self._store(cache, "m1", "[Bash] ls -la → completed", tier="tool_context",
+                    tool_name="Bash")
+
+        msg = self._call(cache, {"uuids": ["m1"]})["messages"][0]
+
+        assert msg["content_tier"] == "tool_context"
+        assert msg["tool_name"] == "Bash"
+        assert "max_summary_length" in msg["note"]
+
+    def test_conversation_tier_has_no_note(self, cache):
+        self._store(cache, "m1", "hello")
+
+        msg = self._call(cache, {"uuids": ["m1"]})["messages"][0]
+
+        assert "note" not in msg
+
+    def test_still_loading_when_database_not_open(self):
+        from kiro_ception.search import handle_message_request
+
+        with patch("kiro_ception.search.get_background_indexer") as mock_get_indexer:
+            indexer_mock = MagicMock()
+            indexer_mock.cache = None
+            mock_get_indexer.return_value = indexer_mock
+
+            response = handle_message_request({"uuids": ["m1"]})
+
+        assert response["status"] == "still_loading"
+        assert response["messages"] == []
+        assert response["not_found"] == ["m1"]
+        assert "hint" in response

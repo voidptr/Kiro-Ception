@@ -124,6 +124,7 @@ def build_context_window(
         text = msg["searchable_text"]
         content_tier = msg.get("content_tier", "conversation")
         context.append({
+            "uuid": msg["uuid"],
             "role": msg["role"],
             "content": truncate_content(text),
             "content_tier": content_tier,

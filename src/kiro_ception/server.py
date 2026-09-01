@@ -233,6 +233,39 @@ def search_global_history(
 
 
 @_instance_tool
+def get_messages(uuids: list[str]) -> dict:
+    """
+    Fetch the COMPLETE stored text of specific messages by uuid.
+
+    Search results cap each message at 2000 characters. Use this to read the
+    rest of a message that came back truncated — pass the uuid from either the
+    matched_message or any entry in a result's context array.
+
+    Args:
+        uuids: One or more message uuids from a prior search result.
+               Batch them in a single call rather than calling repeatedly.
+
+    Returns:
+        messages: Full text plus role, timestamp, session_id, workspace,
+                  message_index, source, and content_tier for each uuid found.
+        not_found: Requested uuids with no matching row (e.g. the session was
+                  re-indexed and the uuid changed).
+
+    Caveats — this returns the full STORED text, which is not always the full
+    original text:
+      - Fenced code blocks were replaced with [code:language] placeholders at
+        index time. The code itself is not in the database.
+      - tool_context messages were capped at
+        tool_summaries.max_summary_length (default 800) before storage, so
+        those come back exactly as truncated as they appear in search. Such
+        entries carry a "note" field saying so.
+    """
+    _ensure_initialized()
+    client = get_engine_client()
+    return client.get_messages(uuids)
+
+
+@_instance_tool
 def get_indexing_status() -> dict:
     """
     Get the current status of the background indexer and search readiness.

@@ -393,6 +393,7 @@ Kiro can call these tools naturally during conversation:
 |------|---------|
 | `search_project_history` | Search conversations scoped to the current workspace |
 | `search_global_history` | Search across all workspaces (supports `source` filter: all/cli/ide) |
+| `get_messages` | Fetch the complete stored text of messages by uuid, bypassing the 2000-char cap search results apply |
 | `get_indexing_status` | Check indexer progress, rate, errors, ETA |
 | `rescan` | Trigger a rescan for new sessions (`full=True` to re-read everything) |
 | `get_config` | Show effective config, paths, cache stats, instance role, etc |
@@ -411,6 +412,33 @@ Both search tools accept:
 | `threshold` | 0.2 | Minimum similarity score (0–1) |
 | `max_results` | 10 | Maximum results to return |
 | `offset` | 0 | Skip results for pagination |
+
+### Reading Truncated Messages
+
+Search results cap each message at 2000 characters, so long responses come back
+ending in `...`. Every result carries a `uuid` — on `matched_message` and on each
+`context` entry — which `get_messages` accepts to return the full stored text:
+
+```
+get_messages(uuids=["9325dc31-6f0a-4bb8-9124-ae3f5b616e69-0"])
+```
+
+Missing uuids are reported in a `not_found` list rather than raising, which
+happens when a session was re-indexed and its uuids changed.
+
+This returns the full *stored* text, which is not always the full *original*
+text. Two things are dropped before storage and cannot be recovered here:
+
+- **Code blocks.** Fenced blocks are replaced with `[code:language]` placeholders
+  at index time to keep thousands of code tokens out of the embeddings. The code
+  itself is not in the database.
+- **Tool summaries.** `tool_context` messages are capped at
+  `tool_summaries.max_summary_length` (default 800) before storage, so they come
+  back exactly as truncated as they appear in search. Those entries carry a
+  `note` field saying so.
+
+The endpoint backing this tool is loopback-only. Unlike search, it is not
+exposed to federated peers.
 
 ## Technologies & Libraries
 

@@ -477,6 +477,11 @@ class EngineClient:
         resp = self._request("POST", "/search", json=request, timeout=30)
         return resp.json()
 
+    def get_messages(self, uuids: list[str]) -> dict:
+        """Fetch full stored message text by uuid from the engine."""
+        resp = self._request("POST", "/message", json={"uuids": uuids}, timeout=15)
+        return resp.json()
+
     def get_status(self) -> dict:
         """Get indexing status from the engine."""
         resp = self._request("GET", "/status", timeout=5)

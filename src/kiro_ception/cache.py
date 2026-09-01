@@ -254,6 +254,44 @@ class EmbeddingCache:
         ]
         return [dict(zip(cols, row)) for row in cursor]
 
+    def get_messages(self, uuids: list[str]) -> list[dict]:
+        """Get messages by uuid with untruncated searchable_text.
+
+        Unlike search results, the text returned here is not capped — this is
+        the full stored message. Note that fenced code blocks were replaced
+        with [code:language] placeholders at index time, and tool_context rows
+        were capped at tool_summaries.max_summary_length before storage, so
+        "full stored text" is not always the full original text.
+
+        Missing uuids are simply absent from the result; callers should diff
+        against the requested list to detect them.
+        """
+        if not uuids:
+            return []
+
+        cols = [
+            "uuid", "session_id", "workspace", "timestamp", "role",
+            "searchable_text", "message_index", "source", "text_hash",
+            "content_tier", "tool_name",
+        ]
+        col_list = ", ".join(cols)
+
+        # SQLite caps the number of bound parameters, so batch the IN clause.
+        results: list[dict] = []
+        batch_size = 500
+        for i in range(0, len(uuids), batch_size):
+            batch = uuids[i:i + batch_size]
+            placeholders = ",".join("?" * len(batch))
+            cursor = self.conn.execute(
+                f"SELECT {col_list} FROM messages WHERE uuid IN ({placeholders})",
+                batch,
+            )
+            results.extend(dict(zip(cols, row, strict=True)) for row in cursor)
+
+        # Preserve the caller's requested ordering rather than SQLite's.
+        by_uuid = {r["uuid"]: r for r in results}
+        return [by_uuid[u] for u in uuids if u in by_uuid]
+
     def delete_session_messages(self, session_id: str):
         """Delete all messages for a session (for re-indexing)."""
         self.conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))

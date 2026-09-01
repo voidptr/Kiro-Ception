@@ -48,6 +48,21 @@ def mock_client():
         "indexing": {"throttle_ms": 0, "rescan_interval_minutes": 10},
         "peers": {"enabled": False, "nodes": []},
     }
+    client.get_messages.return_value = {
+        "status": "ok",
+        "messages": [{
+            "uuid": "msg-1",
+            "role": "assistant",
+            "content": "x" * 5000,
+            "content_tier": "conversation",
+            "timestamp": "2026-08-24T10:00:00",
+            "session_id": "sess-1",
+            "workspace": "/ws",
+            "message_index": 4,
+            "source": "ide",
+        }],
+        "not_found": [],
+    }
     client.trigger_rescan.return_value = {"status": "rescan_triggered"}
     client.trigger_reindex.return_value = {"status": "reindex_triggered"}
     client.reload_config.return_value = {"status": "no_changes", "message": "No changes."}
@@ -179,6 +194,30 @@ class TestSearchGlobalHistory:
         search_global_history(query="test", source="all")
         call_args = mock_client.search.call_args[0][0]
         assert call_args["source"] is None
+
+
+# --- get_messages ---
+
+
+class TestGetMessages:
+    def test_forwards_uuids_to_engine(self, mock_client):
+        from kiro_ception.server import get_messages
+
+        get_messages(uuids=["msg-1", "msg-2"])
+        mock_client.get_messages.assert_called_once_with(["msg-1", "msg-2"])
+
+    def test_returns_untruncated_content(self, mock_client):
+        from kiro_ception.server import get_messages
+
+        result = get_messages(uuids=["msg-1"])
+        assert len(result["messages"][0]["content"]) == 5000
+        assert result["not_found"] == []
+
+    def test_passes_empty_list_through(self, mock_client):
+        from kiro_ception.server import get_messages
+
+        get_messages(uuids=[])
+        mock_client.get_messages.assert_called_once_with([])
 
 
 # --- get_indexing_status ---

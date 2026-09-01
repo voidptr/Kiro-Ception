@@ -183,7 +183,7 @@ def _is_follower_alive(pid: int) -> bool:
             return False
 
 
-def _build_request_handler(search_handler, config_handler, indexer_getter, follower_registry, startup_fingerprint):
+def _build_request_handler(search_handler, config_handler, indexer_getter, follower_registry, startup_fingerprint, message_handler=None):
     """Build the HTTP request handler class with closures over the handlers."""
 
     class EngineRequestHandler(BaseHTTPRequestHandler):
@@ -258,6 +258,19 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                         self._send_json(result)
                     else:
                         self._send_response_maybe_encrypted(result)
+
+                elif self.path == "/message":
+                    # Loopback only. Unlike /search, which deliberately serves
+                    # peers, a by-uuid full-text fetch is a much sharper
+                    # exfiltration primitive and must not be reachable remotely.
+                    if not is_loopback:
+                        _log(f"Rejected non-loopback /message from {client_ip}")
+                        self._send_json({"error": "forbidden"}, 403)
+                        return
+                    if message_handler is None:
+                        self._send_json({"error": "not found"}, 404)
+                        return
+                    self._send_json(message_handler(body))
 
                 elif self.path == "/reindex":
                     indexer = indexer_getter()
@@ -530,7 +543,7 @@ def main():
 
     # === START BACKGROUND INDEXER ===
     from .background_indexer import get_background_indexer
-    from .search import get_search_index, handle_search_request
+    from .search import get_search_index, handle_message_request, handle_search_request
 
     indexer = get_background_indexer()
     indexer.start()
@@ -654,6 +667,7 @@ def main():
 
     RequestHandler = _build_request_handler(
         search_handler=handle_search_request,
+        message_handler=handle_message_request,
         config_handler=config_handler,
         indexer_getter=get_background_indexer,
         follower_registry=follower_registry,

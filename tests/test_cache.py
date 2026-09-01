@@ -173,6 +173,64 @@ class TestMessageOperations:
     def test_get_session_messages_empty(self, cache):
         assert cache.get_session_messages("nonexistent") == []
 
+    def test_get_messages_returns_untruncated_text(self, cache):
+        """get_messages must not apply the 2000-char search display cap."""
+        long_text = "x" * 5000
+        cache.put_messages_batch([self._make_message_tuple(text=long_text)])
+
+        messages = cache.get_messages(["msg-1"])
+        assert len(messages) == 1
+        assert messages[0]["searchable_text"] == long_text
+        assert len(messages[0]["searchable_text"]) == 5000
+        assert "..." not in messages[0]["searchable_text"]
+
+    def test_get_messages_includes_full_column_set(self, cache):
+        cache.put_messages_batch([self._make_message_tuple()])
+        msg = cache.get_messages(["msg-1"])[0]
+        for col in ("uuid", "session_id", "workspace", "timestamp", "role",
+                    "searchable_text", "message_index", "source", "text_hash",
+                    "content_tier", "tool_name"):
+            assert col in msg
+
+    def test_get_messages_empty_list_returns_empty(self, cache):
+        """Must short-circuit rather than emitting a malformed IN () query."""
+        assert cache.get_messages([]) == []
+
+    def test_get_messages_skips_missing_uuids(self, cache):
+        cache.put_messages_batch([
+            self._make_message_tuple(uuid="msg-1", message_index=0),
+            self._make_message_tuple(uuid="msg-2", message_index=1),
+        ])
+
+        messages = cache.get_messages(["msg-1", "nope", "msg-2"])
+        assert [m["uuid"] for m in messages] == ["msg-1", "msg-2"]
+
+    def test_get_messages_preserves_requested_order(self, cache):
+        cache.put_messages_batch([
+            self._make_message_tuple(uuid=f"msg-{i}", message_index=i)
+            for i in range(4)
+        ])
+
+        requested = ["msg-3", "msg-0", "msg-2"]
+        messages = cache.get_messages(requested)
+        assert [m["uuid"] for m in messages] == requested
+
+    def test_get_messages_batches_beyond_sqlite_param_limit(self, cache):
+        """More than 500 uuids must be split across statements."""
+        cache.put_messages_batch([
+            self._make_message_tuple(uuid=f"msg-{i}", message_index=i)
+            for i in range(1200)
+        ])
+
+        requested = [f"msg-{i}" for i in range(1200)]
+        messages = cache.get_messages(requested)
+        assert [m["uuid"] for m in messages] == requested
+
+    def test_get_messages_duplicate_uuid_requested_once(self, cache):
+        cache.put_messages_batch([self._make_message_tuple()])
+        messages = cache.get_messages(["msg-1", "msg-1"])
+        assert [m["uuid"] for m in messages] == ["msg-1", "msg-1"]
+
     def test_delete_session_messages(self, cache):
         msgs = [self._make_message_tuple(uuid=f"msg-{i}", message_index=i) for i in range(3)]
         cache.put_messages_batch(msgs)

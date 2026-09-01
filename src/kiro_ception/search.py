@@ -6,6 +6,7 @@ engine search logic, and peer federation integration.
 
 import math
 import time
+from datetime import datetime
 
 import numpy as np
 
@@ -428,6 +429,62 @@ def handle_search_request(request: dict) -> dict:
         include_tool_context=request.get("include_tool_context", False),
         from_peer=request.get("from_peer", False),
     )
+
+
+def handle_message_request(request: dict) -> dict:
+    """Return the full stored text for the requested uuids.
+
+    Bypasses the truncation applied to search results. Note that fenced code
+    blocks were replaced with [code:language] placeholders at index time, and
+    tool_context rows were capped at tool_summaries.max_summary_length before
+    storage — so this is the full *stored* message, which is not always the
+    full original message.
+    """
+    uuids = request.get("uuids") or []
+    if isinstance(uuids, str):
+        uuids = [uuids]
+
+    indexer = get_background_indexer()
+    cache = indexer.cache
+    if cache is None:
+        return {
+            "status": "still_loading",
+            "messages": [],
+            "not_found": list(uuids),
+            "hint": "The engine is still opening its database. Retry in a few seconds.",
+        }
+
+    rows = cache.get_messages(uuids)
+    found = {r["uuid"] for r in rows}
+
+    messages = []
+    for r in rows:
+        entry = {
+            "uuid": r["uuid"],
+            "role": r["role"],
+            "content": r["searchable_text"],
+            "content_tier": r["content_tier"],
+            "timestamp": datetime.fromtimestamp(r["timestamp"]).isoformat(),
+            "session_id": r["session_id"],
+            "workspace": r["workspace"],
+            "message_index": r["message_index"],
+            "source": r["source"],
+        }
+        if r["tool_name"] is not None:
+            entry["tool_name"] = r["tool_name"]
+        if r["content_tier"] == "tool_context":
+            entry["note"] = (
+                "Tool summaries are capped before storage "
+                "(tool_summaries.max_summary_length), so this text may already "
+                "have been truncated at index time."
+            )
+        messages.append(entry)
+
+    return {
+        "status": "ok",
+        "messages": messages,
+        "not_found": [u for u in uuids if u not in found],
+    }
 
 
 def search(

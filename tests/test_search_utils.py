@@ -241,6 +241,18 @@ class TestBuildContextWindow:
         context = build_context_window(messages, "long-msg", context_size=0)
         assert len(context[0]["content"]) == 2003  # 2000 + "..."
 
+    def test_context_entries_expose_uuid(self):
+        """Every context entry carries its uuid so get_messages can fetch it.
+
+        Without this, a truncated context neighbor is unrecoverable — only the
+        matched message would be addressable.
+        """
+        messages = self._make_messages(10)
+        context = build_context_window(messages, "msg-5", context_size=2)
+        assert [c["uuid"] for c in context] == [
+            "msg-3", "msg-4", "msg-5", "msg-6", "msg-7",
+        ]
+
 
 # --- format_search_response ---
 

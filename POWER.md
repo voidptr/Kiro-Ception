@@ -153,6 +153,7 @@ User: "Re-index everything from scratch"
 
 | Tool | Use Case |
 |------|----------|
+| `get_messages` | Read the COMPLETE text of a message that came back truncated. Pass `uuids` from a prior search result (works for both `matched_message` and any `context` entry) |
 | `get_indexing_status` | Check indexing progress, rate, ETA, errors |
 | `rescan` | Pick up new/changed conversations. Use `full=True` to re-read all sessions (ignores mtime cache) |
 | `reload_config` | Re-read config file and apply safe changes without restart |
@@ -171,6 +172,24 @@ All search tools accept:
 
 Additionally, `search_global_history` accepts:
 - `source` (default: "all"): Filter by source — `"all"`, `"cli"`, or `"ide"`. Only use `"cli"` or `"ide"` if the user explicitly asks to search only CLI or IDE conversations.
+
+## Reading Truncated Messages
+
+Search results cap each message at 2000 characters. When a result is cut off
+(it ends in `...`) and you need the rest, call `get_messages` with the `uuid`
+from that result. Every search result carries a `uuid` on `matched_message` and
+on each `context` entry.
+
+```
+get_messages(uuids=["9325dc31-6f0a-4bb8-9124-ae3f5b616e69-0"])
+```
+
+Batch multiple uuids into one call rather than calling repeatedly.
+
+Two things this cannot recover, because they were dropped before storage:
+- Fenced code blocks, which appear as `[code:language]` placeholders
+- `tool_context` messages, which were capped at 800 characters at index time.
+  These come back with a `note` field explaining that.
 
 ## Date Filtering Examples
 
