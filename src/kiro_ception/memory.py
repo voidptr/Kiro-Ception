@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def get_physical_memory() -> int:
-    """Get physical memory in bytes."""
+    """Get physical memory in bytes.
+
+    Uses a platform-native primitive on each OS and returns 0 if it cannot be
+    determined (callers treat 0 as "no memory limit"):
+      * Linux  — /proc/meminfo MemTotal
+      * Darwin — sysctl hw.memsize
+      * Windows — GlobalMemoryStatusEx via ctypes (no external dependency)
+    """
     system = platform.system()
     if system == "Linux":
         try:
@@ -37,6 +44,40 @@ def get_physical_memory() -> int:
                 return int(result.stdout.strip())
         except (subprocess.SubprocessError, ValueError):
             pass
+    elif system == "Windows":
+        return _windows_physical_memory()
+    return 0
+
+
+def _windows_physical_memory() -> int:
+    """Total physical RAM in bytes on Windows via GlobalMemoryStatusEx.
+
+    Uses only ctypes (stdlib), mirroring the dependency-free approach of the
+    Linux/Darwin branches. Returns 0 on any failure so the caller falls back to
+    "no memory limit" rather than raising.
+    """
+    import ctypes
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    try:
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return int(stat.ullTotalPhys)
+    except (OSError, AttributeError, ValueError):
+        pass
     return 0
 
 
