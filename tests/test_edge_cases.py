@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import time
+import ctypes
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -391,6 +392,48 @@ class TestMemoryLimitEdgeCases:
 
         # 0 = unlimited (can't determine RAM)
         assert limit == 0
+
+    def test_windows_dispatches_to_win32_helper(self):
+        """On Windows, get_physical_memory delegates to the GlobalMemoryStatusEx helper."""
+        with (
+            patch("kiro_ception.memory.platform.system", return_value="Windows"),
+            patch(
+                "kiro_ception.memory._windows_physical_memory",
+                return_value=16 * 1024**3,
+            ) as win,
+        ):
+            from kiro_ception.memory import get_physical_memory
+            assert get_physical_memory() == 16 * 1024**3
+            win.assert_called_once()
+
+    def test_windows_physical_memory_reads_total_phys(self):
+        """_windows_physical_memory returns ullTotalPhys when the API succeeds."""
+        from kiro_ception import memory
+
+        def fake_status_ex(ptr):
+            # ptr is a byref to the MEMORYSTATUSEX; populate ullTotalPhys.
+            ptr._obj.ullTotalPhys = 32 * 1024**3
+            return 1  # nonzero = success
+
+        fake_kernel32 = MagicMock()
+        fake_kernel32.GlobalMemoryStatusEx.side_effect = fake_status_ex
+        fake_windll = MagicMock()
+        fake_windll.kernel32 = fake_kernel32
+
+        with patch.object(ctypes, "windll", fake_windll, create=True):
+            assert memory._windows_physical_memory() == 32 * 1024**3
+
+    def test_windows_physical_memory_failure_returns_zero(self):
+        """A failed GlobalMemoryStatusEx call yields 0 (→ unlimited fallback)."""
+        from kiro_ception import memory
+
+        fake_kernel32 = MagicMock()
+        fake_kernel32.GlobalMemoryStatusEx.return_value = 0  # failure
+        fake_windll = MagicMock()
+        fake_windll.kernel32 = fake_kernel32
+
+        with patch.object(ctypes, "windll", fake_windll, create=True):
+            assert memory._windows_physical_memory() == 0
 
 
 # --- Low: Peer federation edge cases ---
