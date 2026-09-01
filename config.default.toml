@@ -3,11 +3,21 @@
 
 [sources.cli]
 enabled = true
-# SQLite database path - first existing path wins
+# Kiro CLI conversations are read from BOTH stores below, so no history is lost
+# across Kiro CLI's format change. Sessions are unioned and de-duplicated by
+# session id (the JSONL transcript wins when an id appears in both).
+#
+# Legacy SQLite database (conversations_v2 table) - first existing path wins.
 paths = [
     "~/Library/Application Support/kiro-cli/data.sqlite3",
     "~/.local/share/kiro-cli/data.sqlite3",
     "~/AppData/Roaming/kiro-cli/data.sqlite3",
+    "~/AppData/Local/Kiro-Cli/data.sqlite3",
+]
+# Current JSONL session store (one <session_id>.jsonl transcript + .json
+# sidecar per session) - every existing root is scanned.
+session_roots = [
+    "~/.kiro/sessions/cli",
 ]
 
 [sources.ide]
