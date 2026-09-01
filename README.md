@@ -359,7 +359,8 @@ Kiro Ception auto-discovers and indexes conversations from three IDE formats plu
 | **Workspace-sessions (pre-1.0)** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/<base64_path>/<uuid>.json` | Older format where sessions were JSON files with a `history` array. Directory names are base64url-encoded workspace paths. Assistant responses were stubs ("On it.") — real responses came from execution logs. |
 | **Legacy .chat** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/<uuid>.chat` | Earliest format. Full conversations in a single JSON file with `chat` array. |
 | **Execution logs (pre-1.0)** | `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/<workspace_hash>/414d1636299d2b9e4ce7e17fb11f63e9/<exec_id>` | Separate files containing assistant responses (actionType="say") and tool actions. Used to reconstruct full conversations for workspace-sessions format. |
-| **CLI** | `~/.kiro/cli/conversations.db` | SQLite database with `conversations_v2` table. Indexed automatically. |
+| **CLI** | `~/.kiro/sessions/cli/<session_id>.jsonl` (+ `<session_id>.json` sidecar) | Current Kiro CLI store: one JSONL transcript per session with a sidecar carrying the workspace (`cwd`) and timestamps. Indexed automatically. |
+| **CLI (legacy)** | `~/.kiro/cli/data.sqlite3` (and OS-specific `kiro-cli/data.sqlite3`) | Older Kiro CLI store: SQLite with a `conversations_v2` table. Still read, so no history is lost across the format change. Sessions from both stores are unioned and de-duplicated by session id (JSONL wins on a collision). |
 
 When the same session exists in multiple formats (e.g., migrated from workspace-sessions to Kiro 1.0), deduplication ensures it is only indexed once, preferring the richest format (Kiro 1.0 > workspace-sessions > legacy).
 
