@@ -3,3 +3,13 @@
 
 {"ts":"2026-09-05T21:45:00+12:00","event":"PROGRESS_NOTE","work_id":"copilot-source-20260905-213058","note":"All implementation complete: copilot_loader.py with .json direct + .jsonl patch-replay materializer, wired into sessions/config/models/server/engine, fixtures + 23 new tests, all existing tests updated for new source label. Gate: 949 passed 0 failures, ruff clean on new files (41 pre-existing baseline unchanged).","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-05T21:45:01+12:00","event":"NEXT_STEP","work_id":"copilot-source-20260905-213058","step":"Checkpoint-commit the implementation in the worktree, then merge to main via merge-lock, verify in a disposable worktree, clean up, and call goal complete with cited evidence for every criterion.","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-05T21:47:00+12:00","event":"MERGE_LOCK_ACQUIRED","work_id":"copilot-source-20260905-213058","expires_ts":"2026-09-05T21:52:00+12:00","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:47:05+12:00","event":"MERGE_STARTED","work_id":"copilot-source-20260905-213058","target_branch":"main","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:47:10+12:00","event":"MERGE_LOCK_RELEASED","work_id":"copilot-source-20260905-213058","result":"clean","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:47:10+12:00","event":"MERGE_COMPLETED","work_id":"copilot-source-20260905-213058","merge_commit":"c44b6f6956cb654848cca7e3e330e0d0b9445aef","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:47:15+12:00","event":"VERIFY_STARTED","work_id":"copilot-source-20260905-213058","verify_worktree":".worktrees/verify-copilot-source-20260905-213058","merge_commit":"c44b6f6956cb654848cca7e3e330e0d0b9445aef","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:49:35+12:00","event":"VERIFY_COMPLETED","work_id":"copilot-source-20260905-213058","build":"PASS","test":"PASS","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:49:40+12:00","event":"WORKTREE_REMOVED","work_id":"copilot-source-20260905-213058","kind":"verify","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:49:42+12:00","event":"WORKTREE_REMOVED","work_id":"copilot-source-20260905-213058","kind":"work","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T21:49:45+12:00","event":"WORK_COMPLETED","work_id":"copilot-source-20260905-213058","session_id":"sess-20260905-2130"}
