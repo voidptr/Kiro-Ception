@@ -38,6 +38,7 @@ This is a Kiro MCP Power (kiro-ception) that provides semantic search across con
 | `ide_loader.py` | Loads IDE conversations (legacy .chat + workspace-sessions + Kiro 1.0 JSONL + execution logs) |
 | `cli_loader.py` | Loads CLI conversations from SQLite database |
 | `claude_loader.py` | Loads Claude Code conversations (per-session JSONL transcripts + subagent transcripts) |
+| `copilot_loader.py` | Loads GitHub Copilot Chat (VS Code) conversations (per-session .json + .jsonl patch-log chatSessions, workspace.json attribution) |
 | `sessions.py` | Unified entry point combining CLI + IDE + Claude loaders |
 | `config.py` | TOML config loading, dataclasses, hot-reload support |
 | `memory.py` | Memory limit utilities (get_memory_limit, select_sessions_within_limit) |

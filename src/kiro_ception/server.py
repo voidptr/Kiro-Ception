@@ -203,9 +203,10 @@ def search_global_history(
         max_results: Maximum results to return (default: 10)
         offset: Skip results for pagination (default: 0)
         source: Filter by conversation source. Options: "all" (default), "cli",
-                "ide", "claude". Only narrow the source if the user explicitly
-                asks to search only Kiro CLI, only Kiro IDE, or only Claude Code
-                conversations. Otherwise leave as "all".
+                "ide", "claude", "copilot". Only narrow the source if the user
+                explicitly asks to search only Kiro CLI, only Kiro IDE, only
+                Claude Code, or only GitHub Copilot conversations. Otherwise
+                leave as "all".
         include_tool_context: Also search tool call summaries (default: false).
                 When false, only conversation messages (user prompts and assistant
                 responses) are matched. When true, tool context summaries are
@@ -215,7 +216,7 @@ def search_global_history(
         Search results with matched messages, scores, workspace, context, pagination
     """
     _ensure_initialized()
-    source_filter = source if source in ("cli", "ide", "claude") else None
+    source_filter = source if source in ("cli", "ide", "claude", "copilot") else None
 
     client = get_engine_client()
     return client.search({
@@ -376,7 +377,7 @@ if _startup_config.peers.enabled and _startup_config.peers.debug_tool_enabled:
         from .peers import fan_out_search
 
         source_filter = None
-        if source in ("cli", "ide", "claude"):
+        if source in ("cli", "ide", "claude", "copilot"):
             source_filter = Source(source)
 
         peer_request = {

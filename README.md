@@ -392,7 +392,7 @@ Kiro can call these tools naturally during conversation:
 | Tool | Purpose |
 |------|---------|
 | `search_project_history` | Search conversations scoped to the current workspace |
-| `search_global_history` | Search across all workspaces (supports `source` filter: all/cli/ide) |
+| `search_global_history` | Search across all workspaces (supports `source` filter: all/cli/ide/claude/copilot) |
 | `get_indexing_status` | Check indexer progress, rate, errors, ETA |
 | `rescan` | Trigger a rescan for new sessions (`full=True` to re-read everything) |
 | `get_config` | Show effective config, paths, cache stats, instance role, etc |
@@ -558,6 +558,7 @@ Kiro Ception auto-discovers and indexes conversations from three IDE formats plu
 | **CLI** | `~/.kiro/sessions/cli/<session_id>.jsonl` (+ `<session_id>.json` sidecar) | Current Kiro CLI store: one JSONL transcript per session with a sidecar carrying the workspace (`cwd`) and timestamps. Indexed automatically. |
 | **CLI (legacy)** | `~/.kiro/cli/data.sqlite3` (and OS-specific `kiro-cli/data.sqlite3`) | Older Kiro CLI store: SQLite with a `conversations_v2` table. Still read, so no history is lost across the format change. Sessions from both stores are unioned and de-duplicated by session id (JSONL wins on a collision). |
 | **Claude Code** | `~/.claude/projects/<encoded-workspace>/<session-uuid>.jsonl` | One JSONL transcript per session, plus subagent transcripts under `<session-uuid>/subagents/`. Workspace is read from each record's `cwd` field. See [Claude Code Support](#claude-code-support). |
+| **GitHub Copilot** | `<Code>/User/workspaceStorage/<hash>/chatSessions/<uuid>.{json,jsonl}` | One file per VS Code Copilot Chat session. `.json` is a direct object; `.jsonl` is an event/patch log replayed to reconstruct the session. Workspace is read from the sibling `<hash>/workspace.json`. Every configured root (Code stable + Insiders) is scanned. |
 
 When the same session exists in multiple formats (e.g., migrated from workspace-sessions to Kiro 1.0), deduplication ensures it is only indexed once, preferring the richest format (Kiro 1.0 > workspace-sessions > legacy).
 

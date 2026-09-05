@@ -172,6 +172,38 @@ class ClaudeSourceConfig:
 
 
 @dataclass
+class CopilotSourceConfig:
+    """GitHub Copilot Chat (VS Code) source configuration.
+
+    VS Code stores one chat session file per session under each workspace's
+    storage directory: ``<root>/<hash>/chatSessions/<uuid>.{json,jsonl}``. Like
+    the Claude source, every configured root that exists is scanned (not just
+    the first), so multiple VS Code installations (stable, Insiders) can be
+    indexed together. Workspace attribution is read from the sibling
+    ``workspace.json`` in each ``<hash>/`` directory.
+    """
+
+    enabled: bool = True
+    roots: list[str] = field(default_factory=lambda: [
+        "~/AppData/Roaming/Code/User/workspaceStorage",
+        "~/AppData/Roaming/Code - Insiders/User/workspaceStorage",
+        "~/Library/Application Support/Code/User/workspaceStorage",
+        "~/Library/Application Support/Code - Insiders/User/workspaceStorage",
+        "~/.config/Code/User/workspaceStorage",
+        "~/.config/Code - Insiders/User/workspaceStorage",
+    ])
+
+    def get_roots(self) -> list[Path]:
+        """Return every configured root that exists on disk."""
+        roots: list[Path] = []
+        for root in self.roots:
+            expanded = expand_path(root)
+            if expanded.is_dir() and expanded not in roots:
+                roots.append(expanded)
+        return roots
+
+
+@dataclass
 class EmbeddingConfig:
     """Embedding configuration."""
 
@@ -270,6 +302,7 @@ class ToolSummariesConfig:
 # instance summaries. Most-distinguishing source first.
 _SOURCE_LABELS: tuple[tuple[str, str], ...] = (
     ("claude", "Claude Code"),
+    ("copilot", "GitHub Copilot"),
     ("ide", "Kiro IDE"),
     ("cli", "Kiro CLI"),
 )
@@ -286,6 +319,7 @@ class Config:
     cli: CLISourceConfig = field(default_factory=CLISourceConfig)
     ide: IDESourceConfig = field(default_factory=IDESourceConfig)
     claude: ClaudeSourceConfig = field(default_factory=ClaudeSourceConfig)
+    copilot: CopilotSourceConfig = field(default_factory=CopilotSourceConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
@@ -299,6 +333,7 @@ class Config:
         """Display names of the conversation sources this instance indexes."""
         enabled = {
             "claude": self.claude.enabled,
+            "copilot": self.copilot.enabled,
             "ide": self.ide.enabled,
             "cli": self.cli.enabled,
         }
@@ -368,6 +403,7 @@ class Config:
         cli_data = data.get("sources", {}).get("cli", {})
         ide_data = data.get("sources", {}).get("ide", {})
         claude_data = data.get("sources", {}).get("claude", {})
+        copilot_data = data.get("sources", {}).get("copilot", {})
         emb_data = data.get("embedding", {})
         search_data = data.get("search", {})
         mem_data = data.get("memory", {})
@@ -380,6 +416,7 @@ class Config:
             cli=CLISourceConfig(**cli_data) if cli_data else CLISourceConfig(),
             ide=IDESourceConfig(**ide_data) if ide_data else IDESourceConfig(),
             claude=ClaudeSourceConfig(**claude_data) if claude_data else ClaudeSourceConfig(),
+            copilot=CopilotSourceConfig(**copilot_data) if copilot_data else CopilotSourceConfig(),
             embedding=EmbeddingConfig(**emb_data) if emb_data else EmbeddingConfig(),
             search=SearchConfig(**search_data) if search_data else SearchConfig(),
             memory=MemoryConfig(**mem_data) if mem_data else MemoryConfig(),
@@ -467,6 +504,8 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("sources.claude.include_sidechains", old.claude.include_sidechains, new.claude.include_sidechains),
         ("sources.claude.include_thinking", old.claude.include_thinking, new.claude.include_thinking),
         ("sources.claude.include_tool_context", old.claude.include_tool_context, new.claude.include_tool_context),
+        ("sources.copilot.enabled", old.copilot.enabled, new.copilot.enabled),
+        ("sources.copilot.roots", old.copilot.roots, new.copilot.roots),
         ("peers.enabled", old.peers.enabled, new.peers.enabled),
         ("peers.nodes", old.peers.nodes, new.peers.nodes),
         ("peers.secret", "***" if old.peers.secret else "", "***" if new.peers.secret else ""),

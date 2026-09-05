@@ -76,26 +76,27 @@ class TestInstanceIdentity:
     description has to state which sources its instance indexes."""
 
     def test_all_sources_listed_most_distinguishing_first(self):
-        assert Config().indexed_sources == ["Claude Code", "Kiro IDE", "Kiro CLI"]
+        assert Config().indexed_sources == ["Claude Code", "GitHub Copilot", "Kiro IDE", "Kiro CLI"]
 
     def test_disabled_sources_omitted(self):
-        from kiro_ception.config import ClaudeSourceConfig
+        from kiro_ception.config import ClaudeSourceConfig, CopilotSourceConfig
 
         config = Config(
             claude=ClaudeSourceConfig(enabled=False),
+            copilot=CopilotSourceConfig(enabled=False),
             cli=CLISourceConfig(enabled=False),
         )
         assert config.indexed_sources == ["Kiro IDE"]
 
     def test_summary_without_label(self):
         assert Config().instance_summary == (
-            "Indexes: Claude Code, Kiro IDE, Kiro CLI."
+            "Indexes: Claude Code, GitHub Copilot, Kiro IDE, Kiro CLI."
         )
 
     def test_summary_with_label(self):
         config = Config(server=ServerConfig(instance_label="claude-rearview"))
         assert config.instance_summary == (
-            'Instance "claude-rearview". Indexes: Claude Code, Kiro IDE, Kiro CLI.'
+            'Instance "claude-rearview". Indexes: Claude Code, GitHub Copilot, Kiro IDE, Kiro CLI.'
         )
 
     def test_label_whitespace_ignored(self):
@@ -103,10 +104,11 @@ class TestInstanceIdentity:
         assert config.instance_summary.startswith("Indexes:")
 
     def test_summary_when_everything_disabled(self):
-        from kiro_ception.config import ClaudeSourceConfig
+        from kiro_ception.config import ClaudeSourceConfig, CopilotSourceConfig
 
         config = Config(
             claude=ClaudeSourceConfig(enabled=False),
+            copilot=CopilotSourceConfig(enabled=False),
             ide=IDESourceConfig(enabled=False),
             cli=CLISourceConfig(enabled=False),
         )
