@@ -20,3 +20,9 @@ mutants/
 .vscode/
 
 old*
+
+# Worktree-resilience (per-unit-of-work worktrees + owner markers)
+.worktrees/
+
+# Scratch / temporary files (never committed)
+tmp/

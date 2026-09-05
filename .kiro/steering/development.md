@@ -1,3 +1,8 @@
+---
+inclusion: always
+description: "claude-rearview development — Python 3.11+/uv/hatchling toolchain, ruff style, test structure and tiers, and the procedures for adding MCP tools, config options, migrations, and skip filters."
+---
+
 # Development Guide
 
 ## Language & Runtime
@@ -44,7 +49,7 @@
 After modifying code:
 ```bash
 uv sync                              # Rebuild package in venv
-uv run pytest tests/ -q              # Run test suite (300+ tests)
+uv run pytest tests/ -q              # Run test suite (900+ tests)
 uv run kiro-ception                  # Test MCP server starts (Ctrl+C to exit)
 ```
 
@@ -148,7 +153,7 @@ tests/
 | Tool | Purpose |
 |------|---------|
 | `search_project_history` | Search current workspace |
-| `search_global_history` | Search all workspaces (optional `source` filter: all/cli/ide) |
+| `search_global_history` | Search all workspaces (optional `source` filter: all/cli/ide/claude) |
 | `get_indexing_status` | Check indexer progress/state |
 | `rescan` | Pick up new sessions (`full=True` to ignore mtime cache) |
 | `get_config` | Show config, paths, instance role, cache stats |
@@ -235,7 +240,9 @@ src/kiro_ception/
 ├── embeddings.py          # Embedding backend abstraction
 ├── ide_loader.py          # IDE conversation loader
 ├── cli_loader.py          # CLI conversation loader
-├── sessions.py            # Unified loader facade (combines CLI + IDE)
+├── claude_loader.py       # Claude Code conversation loader (per-session JSONL + subagents)
+├── tool_summaries.py      # Tool_use/tool_result pairing → condensed [Tool] summaries
+├── sessions.py            # Unified loader facade (combines CLI + IDE + Claude)
 ├── memory.py              # Memory limit utilities (get_memory_limit, select_sessions_within_limit)
 └── models.py              # Pydantic data models
 ```

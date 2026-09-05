@@ -1,3 +1,8 @@
+---
+inclusion: always
+description: "claude-rearview architecture — process-separated MCP proxy + engine, hybrid vector/FTS5 search, background indexer, and the CLI/IDE/Claude session loaders."
+---
+
 # Architecture Guide
 
 ## System Design

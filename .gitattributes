@@ -1,0 +1,4 @@
+# Append-only work log: concurrent appends from different worktrees merge
+# without conflict (git keeps all lines from both sides). Readers key on each
+# line's `ts`, not line order. See .kiro/steering/modules/rules-worktree-core.md.
+.kiro/GENERAL-WORK-LOG.jsonl merge=union

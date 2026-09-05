@@ -1,3 +1,8 @@
+---
+inclusion: always
+description: "claude-rearview operations — embedding backends, performance characteristics, search behavior, cache locations, and the troubleshooting runbook (still-loading, embedding errors, stale results, engine/peer issues, clean-slate)."
+---
+
 # Operations Guide
 
 ## Embedding Backend
