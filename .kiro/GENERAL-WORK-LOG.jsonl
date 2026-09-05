@@ -18,3 +18,13 @@
 
 {"ts":"2026-09-05T23:35:00+12:00","event":"PROGRESS_NOTE","work_id":"dev-engine-loop-20260905-221654","note":"Headless dev-test loop complete: config.copilot-test.toml, scripts/dev-engine.ps1 (start=detached via cmd /c start returns instantly, stop=recorded follower + config-derived engine PID, down=identity sweep, up/status/config/search/rescan), scripts/dev-engine.sh mirror, workspace .kiro/settings/mcp.json (copilot-test), development.md docs, .gitignore for runtime artifacts. VERIFIED LIVE: engine ran headless, indexed full corpus (94,488 msgs, 0 errors, 8min), source=copilot returned real VS Code Copilot content; start non-block + stop clean teardown confirmed. Gate: 949 pass, ruff 41 (unchanged baseline; no src changes).","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-05T23:35:01+12:00","event":"NEXT_STEP","work_id":"dev-engine-loop-20260905-221654","step":"Commit in worktree, merge to main via merge-lock, verify, clean up, log terminal events; then (pending developer push confirmation) push main to fork and refresh the uv tool power cache.","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-05T23:35:30+12:00","event":"MERGE_LOCK_ACQUIRED","work_id":"dev-engine-loop-20260905-221654","expires_ts":"2026-09-05T23:40:30+12:00","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:35:31+12:00","event":"MERGE_STARTED","work_id":"dev-engine-loop-20260905-221654","target_branch":"main","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:35:35+12:00","event":"MERGE_LOCK_RELEASED","work_id":"dev-engine-loop-20260905-221654","result":"clean","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:35:35+12:00","event":"MERGE_COMPLETED","work_id":"dev-engine-loop-20260905-221654","merge_commit":"95b292228ecfb44f88afbcb9b3a6bf9b9f5413b8","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:35:40+12:00","event":"VERIFY_STARTED","work_id":"dev-engine-loop-20260905-221654","verify_worktree":".worktrees/verify-dev-engine-20260905-221654","merge_commit":"95b292228ecfb44f88afbcb9b3a6bf9b9f5413b8","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:38:05+12:00","event":"VERIFY_COMPLETED","work_id":"dev-engine-loop-20260905-221654","build":"PASS","test":"PASS","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:38:10+12:00","event":"WORKTREE_REMOVED","work_id":"dev-engine-loop-20260905-221654","kind":"verify","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:38:12+12:00","event":"WORKTREE_REMOVED","work_id":"dev-engine-loop-20260905-221654","kind":"work","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-05T23:38:15+12:00","event":"WORK_COMPLETED","work_id":"dev-engine-loop-20260905-221654","session_id":"sess-20260905-2130"}
