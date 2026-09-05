@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "copilot-test": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        ".",
+        "kiro-ception",
+        "--config",
+        "config.copilot-test.toml"
+      ],
+      "autoApprove": [
+        "get_indexing_status",
+        "search_global_history",
+        "search_project_history",
+        "rescan",
+        "get_config"
+      ],
+      "disabled": false
+    }
+  }
+}
