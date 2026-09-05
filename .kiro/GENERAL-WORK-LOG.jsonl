@@ -28,3 +28,8 @@
 {"ts":"2026-09-05T23:38:10+12:00","event":"WORKTREE_REMOVED","work_id":"dev-engine-loop-20260905-221654","kind":"verify","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-05T23:38:12+12:00","event":"WORKTREE_REMOVED","work_id":"dev-engine-loop-20260905-221654","kind":"work","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-05T23:38:15+12:00","event":"WORK_COMPLETED","work_id":"dev-engine-loop-20260905-221654","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-06T00:34:42+12:00","event":"WORK_STARTED","work_id":"update-gotcha-doc-20260906-003442","worktree":".worktrees/update-gotcha-doc-20260906-003442","branch":"wt/general/update-gotcha-doc-20260906-003442","base_commit":"b93fd02","description":"Document the GitHub-power update-pickup gotcha: uv tool run caches the git build, so new commits are not picked up until the uv cache is cleaned AND Kiro is fully restarted. Add to README Troubleshooting + operations.md.","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-06T00:40:00+12:00","event":"PROGRESS_NOTE","work_id":"update-gotcha-doc-20260906-003442","note":"Added README Troubleshooting 'Power update not taking effect (GitHub install)' section documenting the uv-cache/persistent-install/session-binding split-brain and the quit-Kiro -> uv cache clean -> reopen fix, plus why fingerprint self-restart can't catch it and that local-clone Power avoids it. Mirrored concisely in operations.md steering. Gate: 949 pass (docs-only, no regression).","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:01+12:00","event":"NEXT_STEP","work_id":"update-gotcha-doc-20260906-003442","step":"Commit in worktree, merge to main via merge-lock, verify, clean up, push main to fork.","session_id":"sess-20260905-2130"}
