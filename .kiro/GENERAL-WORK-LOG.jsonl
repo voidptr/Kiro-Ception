@@ -33,3 +33,11 @@
 
 {"ts":"2026-09-06T00:40:00+12:00","event":"PROGRESS_NOTE","work_id":"update-gotcha-doc-20260906-003442","note":"Added README Troubleshooting 'Power update not taking effect (GitHub install)' section documenting the uv-cache/persistent-install/session-binding split-brain and the quit-Kiro -> uv cache clean -> reopen fix, plus why fingerprint self-restart can't catch it and that local-clone Power avoids it. Mirrored concisely in operations.md steering. Gate: 949 pass (docs-only, no regression).","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-06T00:40:01+12:00","event":"NEXT_STEP","work_id":"update-gotcha-doc-20260906-003442","step":"Commit in worktree, merge to main via merge-lock, verify, clean up, push main to fork.","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-06T00:40:30+12:00","event":"MERGE_LOCK_ACQUIRED","work_id":"update-gotcha-doc-20260906-003442","expires_ts":"2026-09-06T00:45:30+12:00","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:32+12:00","event":"MERGE_STARTED","work_id":"update-gotcha-doc-20260906-003442","target_branch":"main","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:35+12:00","event":"MERGE_LOCK_RELEASED","work_id":"update-gotcha-doc-20260906-003442","result":"clean","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:35+12:00","event":"MERGE_COMPLETED","work_id":"update-gotcha-doc-20260906-003442","merge_commit":"2736d10751b820a8ef58f1f3902e5e66f8e2f237","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:40+12:00","event":"VERIFY_COMPLETED","work_id":"update-gotcha-doc-20260906-003442","build":"PASS","test":"PASS","note":"docs-only; 949 pass verified pre-merge, clean FF of markdown-only files","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:42+12:00","event":"WORKTREE_REMOVED","work_id":"update-gotcha-doc-20260906-003442","kind":"work","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-06T00:40:45+12:00","event":"WORK_COMPLETED","work_id":"update-gotcha-doc-20260906-003442","session_id":"sess-20260905-2130"}
