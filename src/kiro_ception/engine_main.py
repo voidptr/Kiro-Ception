@@ -594,6 +594,11 @@ def main():
                     "include_thinking": current_config.claude.include_thinking,
                     "include_tool_context": current_config.claude.include_tool_context,
                 },
+                "copilot": {
+                    "enabled": current_config.copilot.enabled,
+                    "roots": current_config.copilot.roots,
+                    "active_roots": [str(p) for p in current_config.copilot.get_roots()],
+                },
             },
             "embedding": {
                 "backend": current_config.embedding.backend,

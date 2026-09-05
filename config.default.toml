@@ -61,6 +61,26 @@ include_thinking = false
 # only matched when a search passes include_tool_context = true.
 include_tool_context = true
 
+[sources.copilot]
+# GitHub Copilot Chat (VS Code) conversation sessions.
+# VS Code writes one file per chat session under each workspace's storage dir:
+#   <root>/<workspace-hash>/chatSessions/<session-uuid>.json   (older)
+#   <root>/<workspace-hash>/chatSessions/<session-uuid>.jsonl  (current)
+# The .jsonl form is an event/patch log replayed to reconstruct the session.
+# Workspace attribution is read from the sibling <workspace-hash>/workspace.json.
+enabled = true
+
+# Every root below that exists is scanned (unlike cli/ide, which are
+# first-match-wins), so VS Code stable + Insiders can be indexed together.
+roots = [
+    "~/AppData/Roaming/Code/User/workspaceStorage",
+    "~/AppData/Roaming/Code - Insiders/User/workspaceStorage",
+    "~/Library/Application Support/Code/User/workspaceStorage",
+    "~/Library/Application Support/Code - Insiders/User/workspaceStorage",
+    "~/.config/Code/User/workspaceStorage",
+    "~/.config/Code - Insiders/User/workspaceStorage",
+]
+
 [embedding]
 # Backend: "sentence-transformers" (default, local) or "openai-compatible" (Ollama, LM Studio, OpenAI, etc.)
 backend = "sentence-transformers"

@@ -153,7 +153,7 @@ tests/
 | Tool | Purpose |
 |------|---------|
 | `search_project_history` | Search current workspace |
-| `search_global_history` | Search all workspaces (optional `source` filter: all/cli/ide/claude) |
+| `search_global_history` | Search all workspaces (optional `source` filter: all/cli/ide/claude/copilot) |
 | `get_indexing_status` | Check indexer progress/state |
 | `rescan` | Pick up new sessions (`full=True` to ignore mtime cache) |
 | `get_config` | Show config, paths, instance role, cache stats |
@@ -241,6 +241,7 @@ src/kiro_ception/
 ├── ide_loader.py          # IDE conversation loader
 ├── cli_loader.py          # CLI conversation loader
 ├── claude_loader.py       # Claude Code conversation loader (per-session JSONL + subagents)
+├── copilot_loader.py      # GitHub Copilot Chat (VS Code) loader (.json + .jsonl patch-log)
 ├── tool_summaries.py      # Tool_use/tool_result pairing → condensed [Tool] summaries
 ├── sessions.py            # Unified loader facade (combines CLI + IDE + Claude)
 ├── memory.py              # Memory limit utilities (get_memory_limit, select_sessions_within_limit)

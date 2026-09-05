@@ -697,7 +697,7 @@ class TestCLIJsonlLoading:
 class TestLoaderFacade:
     def test_list_all_sessions_combines_sources(self, tmp_path):
         """list_all_sessions combines CLI, IDE, and Claude sources."""
-        from kiro_ception.config import Config
+        from kiro_ception.config import Config, CopilotSourceConfig
         from kiro_ception.sessions import list_all_sessions
 
         ide_session = SessionInfo(
@@ -717,13 +717,17 @@ class TestLoaderFacade:
         )
 
         with (
-            patch("kiro_ception.sessions.get_config", return_value=Config()),
+            patch(
+                "kiro_ception.sessions.get_config",
+                return_value=Config(copilot=CopilotSourceConfig(enabled=False)),
+            ),
             patch("kiro_ception.sessions.list_ide_sessions", return_value=[ide_session]),
             patch("kiro_ception.sessions.list_cli_sessions", return_value=[cli_session]),
             patch(
                 "kiro_ception.sessions.list_claude_sessions",
                 return_value=[claude_session],
             ),
+            patch("kiro_ception.sessions.list_copilot_sessions", return_value=[]),
         ):
             sessions = list_all_sessions()
 
@@ -739,6 +743,7 @@ class TestLoaderFacade:
             ClaudeSourceConfig,
             CLISourceConfig,
             Config,
+            CopilotSourceConfig,
             IDESourceConfig,
         )
         from kiro_ception.sessions import list_all_sessions
@@ -747,6 +752,7 @@ class TestLoaderFacade:
             cli=CLISourceConfig(enabled=False),
             ide=IDESourceConfig(enabled=True),
             claude=ClaudeSourceConfig(enabled=False),
+            copilot=CopilotSourceConfig(enabled=False),
         )
 
         ide_session = SessionInfo(
@@ -760,12 +766,14 @@ class TestLoaderFacade:
             patch("kiro_ception.sessions.list_ide_sessions", return_value=[ide_session]),
             patch("kiro_ception.sessions.list_cli_sessions") as mock_cli,
             patch("kiro_ception.sessions.list_claude_sessions") as mock_claude,
+            patch("kiro_ception.sessions.list_copilot_sessions") as mock_copilot,
         ):
             sessions = list_all_sessions()
 
         # Disabled sources should not be queried
         mock_cli.assert_not_called()
         mock_claude.assert_not_called()
+        mock_copilot.assert_not_called()
         assert len(sessions) == 1
 
     def test_load_session_messages_routes_to_claude_loader(self):

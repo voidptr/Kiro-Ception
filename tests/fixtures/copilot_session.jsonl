@@ -1,0 +1,5 @@
+{"kind":0,"v":{"version":3,"creationDate":1778474959179,"customTitle":"Implementing a retry helper","initialLocation":"panel","responderUsername":"GitHub Copilot","sessionId":"11111111-2222-3333-4444-555555555555","requests":[{"requestId":"r0","message":{"text":"write a retry decorator"},"response":[{"kind":"mcpServersStarting","didStartServerIds":[]}],"timestamp":1778474959179}]}}
+{"kind":1,"k":["requests",0,"response",1],"v":{"value":"Here is a simple retry decorator:\n```python\ndef retry(n):\n    ...\n```\nIt retries up to n times."}}
+{"kind":1,"k":["requests",0,"completionTokens"],"v":42}
+{"kind":1,"k":["requests",1],"v":{"requestId":"r1","message":{"text":"add exponential backoff"},"response":["Add a sleep of 2**attempt seconds between retries."],"timestamp":1778475000000}}
+{"kind":1,"k":["lastMessageDate"],"v":1778475000000}

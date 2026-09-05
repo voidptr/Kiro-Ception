@@ -1,0 +1,29 @@
+{
+  "version": 3,
+  "responderUsername": "GitHub Copilot",
+  "initialLocation": "panel",
+  "requests": [
+    {
+      "requestId": "req-0001",
+      "message": { "text": "how do I reverse a list in python", "parts": [] },
+      "response": [
+        { "kind": "mcpServersStarting", "didStartServerIds": [] },
+        { "value": "You can reverse a list with `list.reverse()` or slicing:\n```python\nxs[::-1]\n```\nBoth work." }
+      ],
+      "timestamp": 1767579375756,
+      "modelId": "gpt-4o"
+    },
+    {
+      "requestId": "req-0002",
+      "message": { "text": "and in place?" },
+      "response": [
+        "Use `xs.reverse()` — it mutates the list in place and returns None."
+      ],
+      "timestamp": 1767579400000
+    }
+  ],
+  "sessionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "creationDate": 1767579375756,
+  "lastMessageDate": 1767579400000,
+  "customTitle": "Reversing a list in Python"
+}

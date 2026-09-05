@@ -136,7 +136,7 @@ class TestInstanceAwareToolDescriptions:
 
     def test_description_states_the_indexed_sources(self, monkeypatch):
         description = _register(monkeypatch, Config())
-        assert "Indexes: Claude Code, Kiro IDE, Kiro CLI." in description
+        assert "Indexes: Claude Code, GitHub Copilot, Kiro IDE, Kiro CLI." in description
 
     def test_description_includes_the_label(self, monkeypatch):
         config = Config(server=ServerConfig(instance_label="claude-rearview"))
@@ -167,5 +167,5 @@ class TestInstanceAwareToolDescriptions:
 
     def test_summary_is_separated_from_the_docstring(self, monkeypatch):
         description = _register(monkeypatch, Config())
-        assert description.endswith("Indexes: Claude Code, Kiro IDE, Kiro CLI.")
+        assert description.endswith("Indexes: Claude Code, GitHub Copilot, Kiro IDE, Kiro CLI.")
         assert "\n\nIndexes:" in description

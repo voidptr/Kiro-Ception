@@ -12,6 +12,7 @@ class Source(str, Enum):
     CLI = "cli"
     IDE = "ide"
     CLAUDE = "claude"
+    COPILOT = "copilot"
 
 
 class ContentTier(str, Enum):
