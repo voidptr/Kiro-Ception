@@ -70,6 +70,25 @@ All persistent data lives in `~/.cache/kiro-ception/`:
 - Model/backend/dimensions changes require `rescan(full=True)`
 - The rescan interval is re-read on each loop iteration
 
+### GitHub-Power update not picked up (uv cache split-brain)
+Symptom: after a `git push`/release, `get_config` still shows old code (e.g. a
+newly added source missing) even after restarting Kiro. Cause: a GitHub-install
+Power runs via `uv tool run --from git+<url>`, which **caches the git build and
+does not re-fetch new commits without `--refresh`**; a persistent
+`uv tool install kiro-ception` (check `uv tool list`) can also shadow the
+git-run; and running engines/`uv tool run` wrappers keep respawning old code
+while holding the uv cache lock (so `uv cache clean` times out while Kiro runs).
+- The engine's fingerprint self-restart compares process-vs-local-files; it
+  **cannot** detect that *git* moved forward for a cached `uv tool run` build.
+- Reliable fix (in order): **fully quit Kiro** (releases the cache lock) →
+  `uv cache clean kiro-ception` in a plain terminal → **reopen Kiro** (fresh
+  cold build from git HEAD; MCP panel shows "loading" for minutes) → `get_config`
+  to confirm → `rescan` to index the new source.
+- To verify the *actually-running* code: find the engine PID's exe path; a
+  `uv\cache\archive-v0\<hash>\...` path is a cached-run build. A local-clone
+  Power (`git pull && uv sync`, editable) avoids this entirely.
+- Full user-facing writeup: README Troubleshooting "Power update not taking effect".
+
 ### Multiple windows / engine process issues
 - Use `get_config` to check engine status (see `instance` section)
 - If engine dies, next MCP tool call auto-respawns it

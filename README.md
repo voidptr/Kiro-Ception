@@ -509,6 +509,34 @@ On first startup, the index eagerly loads from SQLite into RAM. If embeddings ex
 - Use `reload_config` tool (applies safe changes immediately)
 - Model/backend/dimensions changes require `rescan(full=True)`
 
+### Power update not taking effect (GitHub install) — new code doesn't appear after `git pull`
+
+If you installed as a Power from GitHub (the `uv tool run --from git+https://github.com/.../Kiro-Ception` form) and a `git push`/new release **doesn't show up** — e.g. `get_config` still lists the old sources, or a newly added source is missing — the cause is **`uv`'s caching of the git build, not your code**. This is the split-brain the [install note](#install-as-a-kiro-power-from-github-alternative) warns about, and it has three compounding layers:
+
+1. **`uv tool run --from git+<url>` caches the built environment** keyed by a resolved commit and, without `--refresh`, **does not re-fetch new commits** — it reuses the cached build indefinitely.
+2. **A persistent `uv tool install kiro-ception`** (if one exists) can shadow the git-run entirely — check `uv tool list`.
+3. **The running engine and this editor session's MCP proxy were spawned from the old code** and keep respawning it; killing individual engine processes doesn't help because sibling `uv tool run` wrappers hold the cache open and respawn from it.
+
+**The reliable fix (do all three, in order):**
+
+```bash
+# 1. Fully QUIT Kiro (all windows) — this terminates the MCP proxies, their
+#    `uv tool run` children, and the engines, releasing the uv cache lock.
+#    (While Kiro is running, `uv cache clean` fails with a lock timeout.)
+
+# 2. In a plain terminal, clear the cached build so uv re-resolves git HEAD:
+uv cache clean kiro-ception
+
+# 3. Reopen Kiro. The Power's proxy now does a fresh git fetch + build of the
+#    latest commit (a slow cold start — the MCP panel shows "loading" for a few
+#    minutes while ~70 packages build and the embedding model preloads), then
+#    the new code is live. Confirm with `get_config`, then `rescan` to index.
+```
+
+Symptoms that point here: `get_config` shows old `version`/sources despite a push; a respawned engine comes up *too fast* to have rebuilt (it reused the cache); `uv cache clean` times out on a lock (Kiro still running). Verifying the actually-running code: find the engine PID's executable path and check whether `copilot_loader.py` (or whatever you added) exists under it — a `uv\cache\archive-v0\<hash>\...` path is a cached-run build; an empty cache forces a real rebuild.
+
+> **Why not automatic?** The engine's fingerprint self-restart compares the *running process* against *local source files* — but for a GitHub `uv tool run` install, the "local source" is the stale cache, which also didn't change. It cannot detect that *git* moved forward. A **local-clone Power** (`git pull && uv sync`, editable install) sidesteps all of this and is the more reliable install method for frequent updates.
+
 ### Multiple windows
 
 All Kiro windows share a single engine process automatically. Each MCP proxy registers its PID with the engine. If the engine dies, the next proxy request will respawn it. Use `get_config` to see the engine PID and port. If the engine has stale code (you updated the source), it will be killed and restarted automatically via fingerprint comparison.
