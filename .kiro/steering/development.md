@@ -75,6 +75,45 @@ up changes immediately after `uv sync` + reinstall.
 
 **Do not commit this local path change.** Revert `mcp.json` before pushing.
 
+### Headless Dev-Test Loop (no Kiro) — preferred
+
+The engine's lifecycle is normally owned by the editor: an MCP proxy spawns it
+and it **self-reaps when its last follower (client) dies** (or after 120s if
+none registers). That auto-lifecycle is great in production but fights
+developer testing — you can't just "leave it running" to poke at it, and
+code-change fingerprinting triggers kill+respawn. So for dev testing, run the
+engine **headless and on demand** instead of restarting Kiro.
+
+This repo ships a self-contained loop targeting an **isolated test instance**
+(`config.copilot-test.toml` — its own `cache_dir` + `engine_port` 19766, so it
+never touches a production index):
+
+```bash
+# start it (foreground; holds the engine open, Ctrl+C to stop)
+./scripts/dev-engine.ps1 up            # or scripts/dev-engine.sh up
+
+# in another terminal — talk to it directly over localhost HTTP
+./scripts/dev-engine.ps1 status                              # indexing progress / readiness
+./scripts/dev-engine.ps1 config                              # instance identity + paths
+./scripts/dev-engine.ps1 search "reverse a list" -Source copilot
+./scripts/dev-engine.ps1 rescan                              # pick up new/changed sessions
+
+# stop it: Ctrl+C the 'up' terminal (v1 does not kill processes)
+./scripts/dev-engine.ps1 down                                # prints the stop instruction
+```
+
+How it works: `dev-engine up` runs `scripts/debug-engine.py`, which spawns the
+engine and re-registers as its follower on an interval (via `X-Follower-PID`),
+so the engine does not self-reap while `up` is running. Loopback (127.0.0.1)
+requests **skip the peer-encryption path**, so `search`/`status`/`rescan` speak
+plain JSON to the engine's HTTP API (`POST /search`, `GET /status`, `GET
+/config`, `POST /rescan`). The wrapper reads `engine_port` straight from
+`config.copilot-test.toml` so it stays in sync.
+
+The workspace `.kiro/settings/mcp.json` also registers this same `copilot-test`
+instance for when you *do* want it inside the editor — but the headless loop
+above is the preferred, editor-independent way to test.
+
 ## Testing
 
 ### Running Tests

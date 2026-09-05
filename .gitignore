@@ -26,3 +26,10 @@ old*
 
 # Scratch / temporary files (never committed)
 tmp/
+
+# dev-engine (headless test loop) runtime artifacts — never committed.
+# The pid file + logs are per-run local state; the test instance's cache lives
+# under ~/.cache/ (out of tree). config.copilot-test.toml IS committed (the rig).
+.dev-engine.pid
+.dev-engine.out.log
+.dev-engine.err.log

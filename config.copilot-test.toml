@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# config.copilot-test.toml — isolated DEV/TEST instance for this clone.
+#
+# This is the config the headless dev-test loop points at (scripts/dev-engine.*
+# and, optionally, the workspace .kiro/settings/mcp.json "copilot-test" entry).
+# It is deliberately isolated from every production rearview instance by the
+# three keys the README calls out: cache_dir, engine_port, and this config file
+# itself. Running the engine against this config NEVER touches your real index.
+#
+# All paths use ~ so this file is portable and safe to commit.
+# ---------------------------------------------------------------------------
+
+[embedding]
+# Isolation key #1: its OWN embedding DB / engine.lock / engine.json / engine.log.
+# A brand-new dir means the test instance indexes from scratch on first run —
+# intended, so it never reads or writes a production cache.
+cache_dir = "~/.cache/copilot-test-rearview"
+
+[server]
+# Isolation key #2: a port clear of the known rearview instances
+# (upstream ~19742/19762, kiro-ception-rearview 19761).
+engine_port = 19766
+# "auto" -> <cache_dir>/engine.log, keeping this instance's log inside its own
+# cache dir rather than sharing a default-instance log file.
+engine_log_file = "auto"
+# Discriminator appended to every tool description, so if this instance is ever
+# registered in an editor alongside the others its tools are distinguishable.
+instance_label = "copilot-test"
+
+# All sources are left at their defaults (enabled), so this instance indexes
+# Kiro CLI + IDE + Claude Code + GitHub Copilot exactly like production — which
+# is the point: it exercises the new Copilot loader end to end.
