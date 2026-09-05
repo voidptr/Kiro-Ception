@@ -5,7 +5,7 @@ description: "Code-workbench behavioral rules — build/test gates, no-rationali
 
 <!-- kiro-module: rules-code-workbench
      source: Utilities/.kiro/steering/modules/rules-code-workbench.md
-     version: 248c8786430a
+     version: dcf19bc450eb
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged.
@@ -31,8 +31,12 @@ rather than copying the algorithm into the test — duplicated-code tests pass e
 production drifts.
 
 **N15 — Mark a spec task or wave complete without passing build + tests.** Not done until
-`dotnet build` (0 errors) AND `dotnet test` (0 failures). Fix breakage you caused; don't
-defer it, don't skip tests, don't hide failures with new skips. See N18.
+the workbench's build passes (0 errors) AND its tests pass (0 failures) — e.g. `dotnet build`
++ `dotnet test` for .NET, `uv run pytest` for Python, `npm run build` + `npm test` for Node.
+The exact gate commands live in the workbench's orientation file (see `rules-build-discipline`);
+some ecosystems have no separate compile step, so the test suite is then the build. Fix
+breakage you caused; don't defer it, don't skip tests, don't hide failures with new skips.
+See N18.
 
 **N16 — Decompile or reflect a NuGet package before searching GitLab for its source.**
 Search GitLab (`mcp_gitlab_search`, `scope: "blobs"`) and read the real `.cs` first.

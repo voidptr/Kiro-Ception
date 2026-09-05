@@ -5,7 +5,7 @@ description: "Worktree-resilience CORE — git-worktree isolation + append-only 
 
 <!-- kiro-module: rules-worktree-core
      source: Utilities/.kiro/steering/modules/rules-worktree-core.md
-     version: 8eaefb25df24
+     version: 49eb4abba1bf
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged.

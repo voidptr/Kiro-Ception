@@ -5,7 +5,7 @@ description: "Common-procedure behavioral rules — dates, journaling, file-tool
 
 <!-- kiro-module: rules-common-procedure
      source: Utilities/.kiro/steering/modules/rules-common-procedure.md
-     version: f1f5ec3fcb5f
+     version: bb8e2d56866e
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged. -->

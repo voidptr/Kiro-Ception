@@ -5,7 +5,7 @@ description: "Worktree-resilience ADDENDUM A — the merge-lock protocol: serial
 
 <!-- kiro-module: rules-worktree-merge-lock
      source: Utilities/.kiro/steering/modules/rules-worktree-merge-lock.md
-     version: 287cbfa9d7d3
+     version: a51b254f8187
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged.

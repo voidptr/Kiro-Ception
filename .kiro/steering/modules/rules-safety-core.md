@@ -5,7 +5,7 @@ description: "Safety-core behavioral rules — the non-optional floor: no fabric
 
 <!-- kiro-module: rules-safety-core
      source: Utilities/.kiro/steering/modules/rules-safety-core.md
-     version: 43c26255c908
+     version: 3c9cb06b0716
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged. -->

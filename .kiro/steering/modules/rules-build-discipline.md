@@ -5,7 +5,7 @@ description: "Build/test gate discipline (project-agnostic) — the gate-before-
 
 <!-- kiro-module: rules-build-discipline
      source: Utilities/.kiro/steering/modules/rules-build-discipline.md
-     version: b00482a24650
+     version: f3b017ce7d4d
      installed: 2026-09-05
      NOTE: copied by workbench-init. Do NOT hand-edit — edit the source module in
      Utilities and re-run workbench-update. Local edits will be flagged.
