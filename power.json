@@ -11,7 +11,7 @@
         "tool",
         "run",
         "--from",
-        "git+https://github.com/voidptr/Kiro-Ception",
+        "git+https://github.com/voidptr/Kiro-Ception@rearview",
         "kiro-ception"
       ],
       "disabled": false,
