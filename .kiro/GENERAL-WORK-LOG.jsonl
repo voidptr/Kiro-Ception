@@ -43,3 +43,7 @@
 {"ts":"2026-09-06T00:40:45+12:00","event":"WORK_COMPLETED","work_id":"update-gotcha-doc-20260906-003442","session_id":"sess-20260905-2130"}
 
 {"ts":"2026-09-07T13:18:27+12:00","event":"WORK_STARTED","work_id":"power-pin-rearview-20260907-131827","worktree":".worktrees/power-pin-rearview-20260907-131827","branch":"wt/general/power-pin-rearview-20260907-131827","base_commit":"5035fbc","description":"Pin the production power's git --from URL to @rearview in repo mcp.json + power.json, so after the main=upstream-mirror restructure the GitHub-install power builds the Rearview product line (with Copilot) rather than the branchless default (main = upstream mirror, no copilot).","session_id":"sess-20260905-2130"}
+
+{"ts":"2026-09-07T13:19:00+12:00","event":"MERGE_COMPLETED","work_id":"power-pin-rearview-20260907-131827","merge_commit":"4cba8e9","target_branch":"rearview","note":"config-only (valid JSON verified); no test gate needed","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-07T13:19:05+12:00","event":"WORKTREE_REMOVED","work_id":"power-pin-rearview-20260907-131827","kind":"work","session_id":"sess-20260905-2130"}
+{"ts":"2026-09-07T13:19:08+12:00","event":"WORK_COMPLETED","work_id":"power-pin-rearview-20260907-131827","session_id":"sess-20260905-2130"}
