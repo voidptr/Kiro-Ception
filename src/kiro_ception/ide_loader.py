@@ -524,6 +524,26 @@ def _load_kiro_session_messages(session: SessionInfo) -> list[IndexedMessage]:
     except OSError as e:
         logger.warning(f"Error loading Kiro session {session.session_id}: {e}")
 
+    # Completeness backfill: a stub message (e.g. "On it.") is a known-incomplete
+    # placeholder. If ANY message in the inline Kiro 1.0 stream is a stub AND
+    # execution logs exist for this session, reconstruct the full content from
+    # those logs and replace the stubs in-place. This covers sessions migrated
+    # from the pre-1.0 workspace-sessions format, whose 1.0 messages.jsonl can be
+    # stub-heavy while the original execution logs survive on disk. Sessions with
+    # no stubs, or no execution logs to reconstruct from, are left untouched.
+    has_stub = any(
+        _is_stub_message(m.role, m.searchable_text)
+        for m in messages
+        if m.content_tier == ContentTier.CONVERSATION
+    )
+    if has_stub and _build_execution_index().get(session.session_id):
+        fallback_ts = session.modified or datetime.now()
+        reconstructed = _process_execution_logs_for_session(
+            session.session_id, session.workspace, fallback_ts
+        )
+        if reconstructed:
+            messages = _replace_stub_messages(reconstructed, messages)
+
     return messages
 
 

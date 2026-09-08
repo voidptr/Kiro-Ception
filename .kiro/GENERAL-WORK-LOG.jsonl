@@ -47,3 +47,5 @@
 {"ts":"2026-09-07T13:19:00+12:00","event":"MERGE_COMPLETED","work_id":"power-pin-rearview-20260907-131827","merge_commit":"4cba8e9","target_branch":"rearview","note":"config-only (valid JSON verified); no test gate needed","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-07T13:19:05+12:00","event":"WORKTREE_REMOVED","work_id":"power-pin-rearview-20260907-131827","kind":"work","session_id":"sess-20260905-2130"}
 {"ts":"2026-09-07T13:19:08+12:00","event":"WORK_COMPLETED","work_id":"power-pin-rearview-20260907-131827","session_id":"sess-20260905-2130"}
+{"ts": "2026-09-08T14:20:03+12:00", "event": "WORK_STARTED", "work_id": "stub-reconstruct-20260908-1419", "session_id": "sess-20260908-1419", "branch": "wt/general/stub-reconstruct-20260908-1419", "base_commit": "4acb6d0", "description": "1.0-loader-reconstruct-from-exec-logs-on-any-stub"}
+{"ts": "2026-09-08T14:27:30+12:00", "event": "PROGRESS_NOTE", "work_id": "stub-reconstruct-20260908-1419", "session_id": "sess-20260908-1419", "note": "tests-pass-952-lint-baseline-clean", "files": "ide_loader.py,test_kiro_sessions.py"}

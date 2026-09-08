@@ -823,3 +823,110 @@ class TestLoadIdeSessionMessages:
         assert len(messages) > 0
         user_msgs = [m for m in messages if m.role == "user" and m.content_tier == ContentTier.CONVERSATION]
         assert any("JWT" in m.searchable_text for m in user_msgs)
+
+
+
+class TestStubReconstructionInKiroLoader:
+    """The 1.0 loader must backfill stub messages from execution logs.
+
+    Invariant: a stub (e.g. "On it.") is a known-incomplete placeholder. If ANY
+    stub is present in the inline Kiro 1.0 stream AND execution logs exist for the
+    session, the loader reconstructs full content from those logs and replaces the
+    stubs. Sessions with no stubs, or no execution logs, are left untouched.
+    """
+
+    def _make_stub_session(self, tmp_path, *, stub: bool) -> SessionInfo:
+        """Create a minimal Kiro 1.0 session; if stub=True the assistant reply is 'On it.'."""
+        sid = "sess_stubtest-0000-0000-0000-000000000000"
+        workspace = "/Users/testuser/projects/migrated"
+        prefix = _workspace_path_to_sha256_prefix(workspace)
+        sess_dir = tmp_path / "sessions" / prefix / sid
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        assistant_content = "On it." if stub else "Here is the full detailed answer."
+        lines = [
+            {"timestamp": "2026-06-28T10:30:00Z", "id": "m0",
+             "payload": {"type": "user", "content": "Do the big task."}},
+            {"timestamp": "2026-06-28T10:31:00Z", "id": "m1",
+             "payload": {"type": "assistant", "content": assistant_content}},
+        ]
+        with open(sess_dir / "messages.jsonl", "w", encoding="utf-8") as f:
+            for ln in lines:
+                f.write(json.dumps(ln) + "\n")
+        return SessionInfo(
+            session_id=sid,
+            workspace=workspace,
+            created=datetime(2026, 6, 28, 10, 30),
+            modified=datetime(2026, 6, 28, 11, 45),
+            source=Source.IDE,
+        )
+
+    def _reconstructed(self, session):
+        """A full-content reconstruction result the exec-log path would return."""
+        from kiro_ception.models import IndexedMessage
+        return [
+            IndexedMessage(
+                uuid="recon-1", session_id=session.session_id,
+                workspace=session.workspace, timestamp=session.modified,
+                role="assistant", searchable_text="Reconstructed full assistant response.",
+                message_index=1, source=Source.IDE,
+                content_tier=ContentTier.CONVERSATION,
+            ),
+        ]
+
+    def test_any_stub_with_exec_logs_triggers_reconstruction(self, tmp_path):
+        session = self._make_stub_session(tmp_path, stub=True)
+        sessions_dir = tmp_path / "sessions"
+        with patch(
+            "kiro_ception.ide_loader._get_kiro_sessions_dirs", return_value=[sessions_dir]
+        ), patch(
+            "kiro_ception.ide_loader._build_execution_index",
+            return_value={session.session_id: ["/fake/exec/log"]},
+        ), patch(
+            "kiro_ception.ide_loader._process_execution_logs_for_session",
+            return_value=self._reconstructed(session),
+        ) as proc:
+            messages = _load_kiro_session_messages(session)
+
+        # Reconstruction was invoked for this session
+        proc.assert_called_once()
+        # The stub "On it." is gone; the reconstructed content is present
+        texts = [m.searchable_text for m in messages]
+        assert "On it." not in texts
+        assert any("Reconstructed full assistant response." in t for t in texts)
+
+    def test_no_stub_leaves_session_untouched(self, tmp_path):
+        session = self._make_stub_session(tmp_path, stub=False)
+        sessions_dir = tmp_path / "sessions"
+        with patch(
+            "kiro_ception.ide_loader._get_kiro_sessions_dirs", return_value=[sessions_dir]
+        ), patch(
+            "kiro_ception.ide_loader._build_execution_index",
+            return_value={session.session_id: ["/fake/exec/log"]},
+        ), patch(
+            "kiro_ception.ide_loader._process_execution_logs_for_session",
+            return_value=self._reconstructed(session),
+        ) as proc:
+            messages = _load_kiro_session_messages(session)
+
+        # No stub → reconstruction must NOT run; inline content preserved as-is
+        proc.assert_not_called()
+        texts = [m.searchable_text for m in messages]
+        assert any("full detailed answer" in t for t in texts)
+
+    def test_stub_but_no_exec_logs_retains_stub(self, tmp_path):
+        session = self._make_stub_session(tmp_path, stub=True)
+        sessions_dir = tmp_path / "sessions"
+        with patch(
+            "kiro_ception.ide_loader._get_kiro_sessions_dirs", return_value=[sessions_dir]
+        ), patch(
+            "kiro_ception.ide_loader._build_execution_index", return_value={}
+        ), patch(
+            "kiro_ception.ide_loader._process_execution_logs_for_session",
+            return_value=self._reconstructed(session),
+        ) as proc:
+            messages = _load_kiro_session_messages(session)
+
+        # Stub present but nothing to reconstruct from → stub retained, no crash
+        proc.assert_not_called()
+        texts = [m.searchable_text for m in messages]
+        assert "On it." in texts
