@@ -88,6 +88,16 @@ The accepted `source` filter values are **all / cli / ide / claude** (confirmed 
 - **Slow first engine start** (torch + model preload) can exceed
   `engine_startup_timeout_seconds`; that is not fatal — the engine keeps starting and later
   calls reach it. Don't treat the startup-gap "unavailable" as a real failure.
+- **MCP tools bind at session START.** A running session only exposes the kiro-ception
+  instance that was registered when it launched; editing `mcp.json` mid-session does NOT
+  attach new/other instances to it — the edit only takes effect in the NEXT session. So a
+  session bound to one instance (e.g. dev `copilot-test`) cannot keyword/tool-search another
+  (e.g. production `kiro-ception-rearview`) no matter how `mcp.json` changes. To reach an
+  unbound-but-running instance from the current session, call its localhost HTTP API directly
+  (loopback skips peer-encryption): `POST /search`, `GET /config`, `GET /status`. Live port
+  map: **19761** = `claude-rearview` (older, no Copilot), **19762** = `kiro-ception-rearview`
+  (production, full line incl. Copilot), **19766** = `copilot-test` (dev). Confirm any port
+  with `GET /config` (returns the `instance.label`).
 
 ## Worktree-resilience is live here
 
