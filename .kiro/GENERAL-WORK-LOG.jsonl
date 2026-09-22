@@ -55,3 +55,10 @@
 {"ts": "2026-09-23T11:44:10+12:00", "event": "WORK_STARTED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "worktree": ".worktrees/git-workflow-steering-20260923-1144", "branch": "wt/general/git-workflow-steering-20260923-1144", "base_commit": "ca8afbc", "description": "Add always-on git-workflow.md steering: 3-location/2-track model (upstream / fork-main mirror / rearview trunk), cut pr/* off main not rearview, rearview must contain all work, and the content-level merge-tree containment test (why graph/ancestry/diff checks misreport)."}
 
 {"ts": "2026-09-23T11:45:00+12:00", "event": "PROGRESS_NOTE", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "note": "wrote .kiro/steering/git-workflow.md (always-on); captures 3-location model, two-track rule, and the merge-tree content-containment test with the graph-heuristics-lie table", "files": ".kiro/steering/git-workflow.md"}
+
+{"ts": "2026-09-23T11:47:00+12:00", "event": "MERGE_LOCK_RELEASED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "result": "clean"}
+{"ts": "2026-09-23T11:47:01+12:00", "event": "MERGE_COMPLETED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "merge_commit": "HEAD"}
+
+{"ts": "2026-09-23T11:47:30+12:00", "event": "VERIFY_COMPLETED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "build": "N/A", "test": "N/A", "note": "docs-only steering addition; no code changed, so no build/test gate per orientation file. Verified file renders + always-on frontmatter matches convention."}
+{"ts": "2026-09-23T11:47:31+12:00", "event": "WORKTREE_REMOVED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "kind": "work"}
+{"ts": "2026-09-23T11:47:32+12:00", "event": "WORK_COMPLETED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "merge_commit": "7e6db7e"}
