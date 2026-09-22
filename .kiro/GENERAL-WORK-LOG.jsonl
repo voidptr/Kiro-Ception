@@ -51,3 +51,7 @@
 {"ts": "2026-09-08T14:27:30+12:00", "event": "PROGRESS_NOTE", "work_id": "stub-reconstruct-20260908-1419", "session_id": "sess-20260908-1419", "note": "tests-pass-952-lint-baseline-clean", "files": "ide_loader.py,test_kiro_sessions.py"}
 {"ts": "2026-09-08T14:35:04+12:00", "event": "WORKTREE_REMOVED", "work_id": "stub-reconstruct-20260908-1419", "session_id": "sess-20260908-1419", "kind": "both"}
 {"ts": "2026-09-08T14:35:04+12:00", "event": "WORK_COMPLETED", "work_id": "stub-reconstruct-20260908-1419", "session_id": "sess-20260908-1419", "merge_commit": "812c950"}
+
+{"ts": "2026-09-23T11:44:10+12:00", "event": "WORK_STARTED", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "worktree": ".worktrees/git-workflow-steering-20260923-1144", "branch": "wt/general/git-workflow-steering-20260923-1144", "base_commit": "ca8afbc", "description": "Add always-on git-workflow.md steering: 3-location/2-track model (upstream / fork-main mirror / rearview trunk), cut pr/* off main not rearview, rearview must contain all work, and the content-level merge-tree containment test (why graph/ancestry/diff checks misreport)."}
+
+{"ts": "2026-09-23T11:45:00+12:00", "event": "PROGRESS_NOTE", "work_id": "git-workflow-steering-20260923-1144", "session_id": "sess-20260923-1122", "note": "wrote .kiro/steering/git-workflow.md (always-on); captures 3-location model, two-track rule, and the merge-tree content-containment test with the graph-heuristics-lie table", "files": ".kiro/steering/git-workflow.md"}
