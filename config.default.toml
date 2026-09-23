@@ -104,10 +104,11 @@ default_context_window = 3
 # exactly this multiplier. Recent messages get ~1.0, older ones decay smoothly
 # toward this floor. Set to 1.0 to disable recency boosting entirely.
 recency_floor = 0.85
-# Override the workspace directory used by search_project_history.
+# Optional default scope for search_project_history.
 # When set, search_project_history scopes results to this path.
-# When empty (default), auto-detected from the Kiro IDE/CLI environment.
-# Useful if auto-detection doesn't pick up your workspace correctly.
+# When empty (default), searches run UNSCOPED (across all workspaces).
+# There is NO environment/cwd auto-detection: an agent that wants a specific
+# scope passes `workspace` on the tool call. This is the only server-side scope.
 # workspace_dir = "~/projects/my-main-project"
 
 [memory]

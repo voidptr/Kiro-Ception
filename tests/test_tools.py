@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # --- Shared fixtures ---
 
 
@@ -77,43 +76,52 @@ class TestSearchProjectHistory:
         assert "query" in result
 
     def test_passes_workspace_filter(self, mock_client):
-        with patch("kiro_ception.server._get_current_workspace", return_value="/my/project"):
+        from kiro_ception.server import search_project_history
+
+        search_project_history(query="test", workspace="/my/project")
+
+        call_args = mock_client.search.call_args[0][0]
+        assert call_args["workspace"] == "/my/project"
+
+    def test_passes_all_parameters(self, mock_client):
+        from kiro_ception.server import search_project_history
+
+        search_project_history(
+            query="hello",
+            after="2025-01-01",
+            before="2025-06-01",
+            context_size=5,
+            threshold=0.3,
+            max_results=20,
+            offset=10,
+            include_tool_context=True,
+            workspace="/ws",
+        )
+
+        call_args = mock_client.search.call_args[0][0]
+        assert call_args["query"] == "hello"
+        assert call_args["after"] == "2025-01-01"
+        assert call_args["before"] == "2025-06-01"
+        assert call_args["context_size"] == 5
+        assert call_args["threshold"] == 0.3
+        assert call_args["max_results"] == 20
+        assert call_args["offset"] == 10
+        assert call_args["include_tool_context"] is True
+        assert call_args["workspace"] == "/ws"
+
+    def test_no_workspace_arg_runs_unscoped(self, mock_client):
+        """No workspace arg + no config pin => unscoped (workspace=None), no guessing."""
+        with patch("kiro_ception.server._config_workspace", return_value=None):
             from kiro_ception.server import search_project_history
 
             search_project_history(query="test")
 
             call_args = mock_client.search.call_args[0][0]
-            assert call_args["workspace"] == "/my/project"
+            assert call_args["workspace"] is None
 
-    def test_passes_all_parameters(self, mock_client):
-        with patch("kiro_ception.server._get_current_workspace", return_value="/ws"):
-            from kiro_ception.server import search_project_history
-
-            search_project_history(
-                query="hello",
-                after="2025-01-01",
-                before="2025-06-01",
-                context_size=5,
-                threshold=0.3,
-                max_results=20,
-                offset=10,
-                include_tool_context=True,
-            )
-
-            call_args = mock_client.search.call_args[0][0]
-            assert call_args["query"] == "hello"
-            assert call_args["after"] == "2025-01-01"
-            assert call_args["before"] == "2025-06-01"
-            assert call_args["context_size"] == 5
-            assert call_args["threshold"] == 0.3
-            assert call_args["max_results"] == 20
-            assert call_args["offset"] == 10
-            assert call_args["include_tool_context"] is True
-            assert call_args["workspace"] == "/ws"
-
-    def test_workspace_param_overrides_auto_detect(self, mock_client):
-        """When workspace is passed explicitly, it overrides _get_current_workspace()."""
-        with patch("kiro_ception.server._get_current_workspace", return_value="/wrong/path"):
+    def test_workspace_param_overrides_config(self, mock_client):
+        """Explicit workspace wins even when a config pin exists."""
+        with patch("kiro_ception.server._config_workspace", return_value="/configured"):
             from kiro_ception.server import search_project_history
 
             search_project_history(query="test", workspace="/correct/project/path")
@@ -121,25 +129,104 @@ class TestSearchProjectHistory:
             call_args = mock_client.search.call_args[0][0]
             assert call_args["workspace"] == "/correct/project/path"
 
-    def test_workspace_param_none_uses_auto_detect(self, mock_client):
-        """When workspace is not passed (None), falls back to _get_current_workspace()."""
-        with patch("kiro_ception.server._get_current_workspace", return_value="/auto/detected"):
+    def test_config_pin_used_when_no_arg(self, mock_client):
+        """When no workspace arg is passed, a config pin supplies the default scope."""
+        with patch("kiro_ception.server._config_workspace", return_value="/configured/ws"):
             from kiro_ception.server import search_project_history
 
             search_project_history(query="test")
 
             call_args = mock_client.search.call_args[0][0]
-            assert call_args["workspace"] == "/auto/detected"
+            assert call_args["workspace"] == "/configured/ws"
 
-    def test_workspace_param_empty_string_uses_auto_detect(self, mock_client):
-        """Empty string workspace falls back to auto-detect (only None/falsy skips)."""
-        with patch("kiro_ception.server._get_current_workspace", return_value="/auto/detected"):
+    def test_empty_string_workspace_falls_through_to_config(self, mock_client):
+        """Empty string is falsy => treated as 'not passed', so config pin applies."""
+        with patch("kiro_ception.server._config_workspace", return_value="/configured/ws"):
             from kiro_ception.server import search_project_history
 
             search_project_history(query="test", workspace="")
 
             call_args = mock_client.search.call_args[0][0]
-            assert call_args["workspace"] == "/auto/detected"
+            assert call_args["workspace"] == "/configured/ws"
+
+    def test_workspace_resolution_reported_for_explicit(self, mock_client):
+        """Passing workspace explicitly reports source='explicit' and scoped=True."""
+        from kiro_ception.server import search_project_history
+
+        result = search_project_history(query="test", workspace="/correct/project")
+
+        assert result["workspace_resolution"] == {
+            "workspace": "/correct/project",
+            "source": "explicit",
+            "scoped": True,
+        }
+
+    def test_workspace_resolution_reported_for_config(self, mock_client):
+        """A config-pinned workspace reports source='config' and scoped=True."""
+        with patch("kiro_ception.server._config_workspace", return_value="/configured/ws"):
+            from kiro_ception.server import search_project_history
+
+            result = search_project_history(query="test")
+
+            assert result["workspace_resolution"] == {
+                "workspace": "/configured/ws",
+                "source": "config",
+                "scoped": True,
+            }
+
+    def test_workspace_resolution_none_runs_unscoped(self, mock_client):
+        """No arg + no config => search runs unscoped (workspace=None) and says so."""
+        with patch("kiro_ception.server._config_workspace", return_value=None):
+            from kiro_ception.server import search_project_history
+
+            result = search_project_history(query="test")
+
+            call_args = mock_client.search.call_args[0][0]
+            assert call_args["workspace"] is None
+            assert result["workspace_resolution"] == {
+                "workspace": None,
+                "source": "none",
+                "scoped": False,
+            }
+
+
+class TestConfigWorkspace:
+    """Unit tests for _config_workspace() — the ONLY server-side workspace source.
+
+    There is no env-var or cwd detection. The only server-side scope is an
+    explicit user-pinned search.workspace_dir; everything else is None
+    (unscoped), and the calling agent must pass `workspace` for project scope.
+    """
+
+    def test_no_config_pin_returns_none(self):
+        cfg = MagicMock()
+        cfg.search.workspace_dir = None
+        with patch("kiro_ception.server._get_config", return_value=cfg):
+            from kiro_ception.server import _config_workspace
+
+            assert _config_workspace() is None
+
+    def test_config_pin_returned_and_expanded(self):
+        cfg = MagicMock()
+        cfg.search.workspace_dir = "~/configured/ws"
+        with (
+            patch("kiro_ception.server._get_config", return_value=cfg),
+            patch("kiro_ception.server.expand_path", side_effect=lambda p: p.replace("~", "/home")),
+        ):
+            from kiro_ception.server import _config_workspace
+
+            assert _config_workspace() == "/home/configured/ws"
+
+    def test_env_vars_are_ignored(self, monkeypatch):
+        """KIRO_WORKSPACE / CLAUDE_PROJECT_DIR must NOT influence scope."""
+        monkeypatch.setenv("KIRO_WORKSPACE", "/kiro/ws")
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/claude/ws")
+        cfg = MagicMock()
+        cfg.search.workspace_dir = None
+        with patch("kiro_ception.server._get_config", return_value=cfg):
+            from kiro_ception.server import _config_workspace
+
+            assert _config_workspace() is None
 
 
 # --- search_global_history ---

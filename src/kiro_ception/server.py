@@ -9,13 +9,10 @@ Architecture:
 - Engine process: HTTP server + indexer + search (separate PID, detached)
 """
 
-import os
-from pathlib import Path
-
 from mcp.server.fastmcp import FastMCP
 
-from .config import get_config as _get_config
 from .config import expand_path
+from .config import get_config as _get_config
 from .engine_client import ensure_engine_running, get_engine_client
 from .models import Source
 
@@ -59,23 +56,23 @@ def _ensure_initialized():
         _initialize()
 
 
-def _get_current_workspace() -> str | None:
-    """Get current workspace path.
+def _config_workspace() -> str | None:
+    """Return the workspace configured in ``search.workspace_dir``, or ``None``.
 
-    Priority:
-    1. Config file: search.workspace_dir (if set)
-    2. Environment: KIRO_WORKSPACE (set by Kiro IDE/CLI)
-    3. Environment: CLAUDE_PROJECT_DIR (set by Claude Code)
-    4. Current working directory (PWD or cwd)
+    This is the ONLY server-side workspace source, and it is opt-in: it exists
+    solely so a user can pin a default scope in their config file. There is
+    deliberately no environment-variable or current-working-directory detection
+    — the engine is a long-lived process spawned once, so its cwd/env bear no
+    relation to whichever workspace the calling agent is actually in, and
+    guessing produced confidently-wrong scoping. When this returns ``None`` the
+    search runs UNSCOPED (all workspaces). An agent that wants project scope is
+    responsible for determining its own workspace root and passing ``workspace``
+    explicitly.
     """
     config = _get_config()
     if config.search.workspace_dir:
         return str(expand_path(config.search.workspace_dir))
-    if val := os.environ.get("KIRO_WORKSPACE"):
-        return val
-    if val := os.environ.get("CLAUDE_PROJECT_DIR"):
-        return val
-    return os.environ.get("PWD") or str(Path.cwd())
+    return None
 
 
 # --- MCP Tools ---
@@ -94,10 +91,20 @@ def search_project_history(
     workspace: str | None = None,
 ) -> dict:
     """
-    Search conversation history for the CURRENT WORKSPACE only.
+    Search conversation history scoped to a workspace you specify.
 
     Use this to find workspace-specific context: past decisions, implementation
-    details, bugs discussed, architecture choices in this codebase.
+    details, bugs discussed, architecture choices in a particular codebase.
+
+    IMPORTANT — you must supply the scope. This tool does NOT auto-detect your
+    workspace. It only scopes when you pass `workspace` explicitly (or when the
+    user has pinned `search.workspace_dir` in their config). If you don't pass
+    `workspace`, the search runs UNSCOPED across ALL workspaces — identical to
+    search_global_history. So: figure out your own workspace root and pass it.
+    You typically know it from your operating context — the workspace/project
+    root shown in your system prompt, environment, or the path of files you're
+    working on. Pass that absolute path as `workspace`. Check the response's
+    `workspace_resolution` field to confirm the scope that was actually applied.
 
     Args:
         query: Keywords or sentence describing what to find
@@ -111,18 +118,29 @@ def search_project_history(
                 When false, only conversation messages (user prompts and assistant
                 responses) are matched. When true, tool context summaries are
                 also included as searchable content.
-        workspace: Workspace root path to scope results to. If provided, overrides
-                automatic workspace detection. Use this when the MCP server's
-                working directory differs from the project you're working in
-                (e.g., multi-root workspaces).
+        workspace: Absolute path of the workspace root to scope results to. YOU
+                (the calling agent) are responsible for determining this from
+                your own operating context and passing it — the tool never
+                guesses it for you. When omitted, results are NOT scoped: the
+                search covers all workspaces. The one exception is a user-pinned
+                `search.workspace_dir` in the config file, which is used as the
+                default scope when you omit this. The response's
+                `workspace_resolution` field reports the scope actually applied
+                (`source`: "explicit" you passed it, "config" from config file,
+                or "none" unscoped/all-workspaces).
 
     Returns:
         Search results with matched messages, scores, context, and pagination info
     """
     _ensure_initialized()
     client = get_engine_client()
-    effective_workspace = workspace if workspace else _get_current_workspace()
-    return client.search({
+    if workspace:
+        effective_workspace, resolution_source = workspace, "explicit"
+    elif config_ws := _config_workspace():
+        effective_workspace, resolution_source = config_ws, "config"
+    else:
+        effective_workspace, resolution_source = None, "none"
+    result = client.search({
         "query": query,
         "workspace": effective_workspace,
         "source": None,
@@ -134,6 +152,18 @@ def search_project_history(
         "offset": offset,
         "include_tool_context": include_tool_context,
     })
+    # Surface how the workspace was resolved so the scope in effect is visible.
+    #   "explicit" — you passed `workspace`
+    #   "config"   — picked up from search.workspace_dir in the config file
+    #   "none"     — UNSCOPED: searched across ALL workspaces. This tool does NOT
+    #                auto-detect your workspace; pass `workspace` for project scope.
+    if isinstance(result, dict):
+        result["workspace_resolution"] = {
+            "workspace": effective_workspace,
+            "source": resolution_source,
+            "scoped": effective_workspace is not None,
+        }
+    return result
 
 
 @mcp.tool()
