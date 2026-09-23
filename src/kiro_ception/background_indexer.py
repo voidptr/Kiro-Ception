@@ -224,16 +224,19 @@ class BackgroundIndexer:
             # Release transient memory from the indexing pass
             _release_memory()
 
-            # Mark initial pass as completed
+            # Mark initial pass as completed. Persist to SQLite BEFORE flipping
+            # state to IDLE: a consumer that observes IDLE and then reads the
+            # persisted last_completed_at must never see a stale/absent value.
+            # (State-before-persist is a happens-before race — observed as a
+            # flaky test on slower CI runners.)
             self._status.completed_at = time.time()
             self._status.last_completed_at = self._status.completed_at
-            self._status.state = IndexerState.IDLE
             self._status.embedding_count = self._cache.embedding_count if self._cache else 0
-            # Persist to SQLite so it survives restarts
             if self._cache:
                 self._cache.set_meta(
                     "last_completed_at", str(self._status.last_completed_at)
                 )
+            self._status.state = IndexerState.IDLE
 
             # Periodic rescan loop
             rescan_interval = config.indexing.rescan_interval_minutes * 60
@@ -309,16 +312,17 @@ class BackgroundIndexer:
                 # Release transient memory from the rescan pass
                 _release_memory()
 
-                # Mark this pass as completed
+                # Mark this pass as completed. Persist BEFORE flipping to IDLE
+                # (see the initial-pass note) so an observer of IDLE always
+                # sees the persisted last_completed_at.
                 self._status.completed_at = time.time()
                 self._status.last_completed_at = self._status.completed_at
-                self._status.state = IndexerState.IDLE
                 self._status.embedding_count = self._cache.embedding_count if self._cache else 0
-                # Persist to SQLite so it survives restarts
                 if self._cache:
                     self._cache.set_meta(
                         "last_completed_at", str(self._status.last_completed_at)
                     )
+                self._status.state = IndexerState.IDLE
 
         except Exception as e:
             self._status.state = IndexerState.ERROR
@@ -327,13 +331,13 @@ class BackgroundIndexer:
         finally:
             self._status.completed_at = time.time()
             if self._status.state not in (IndexerState.ERROR,):
-                self._status.state = IndexerState.IDLE
                 self._status.last_completed_at = self._status.completed_at
-                # Persist to SQLite so it survives restarts
+                # Persist BEFORE flipping to IDLE (see the initial-pass note).
                 if self._cache:
                     self._cache.set_meta(
                         "last_completed_at", str(self._status.last_completed_at)
                     )
+                self._status.state = IndexerState.IDLE
             self._status.embedding_count = self._cache.embedding_count if self._cache else 0
 
     def _index_pass(self, config):
