@@ -90,29 +90,29 @@ class TestBackwardCompatibility:
     """Omitting include_tool_context produces identical behavior to before."""
 
     def test_project_search_same_params_as_before(self, mock_client):
-        with patch("kiro_ception.server._get_current_workspace", return_value="/workspace"):
-            from kiro_ception.server import search_project_history
+        from kiro_ception.server import search_project_history
 
-            search_project_history(
-                query="hello",
-                after="2025-01-01",
-                before="2025-12-31",
-                context_size=5,
-                threshold=0.3,
-                max_results=20,
-                offset=10,
-            )
+        search_project_history(
+            query="hello",
+            after="2025-01-01",
+            before="2025-12-31",
+            context_size=5,
+            threshold=0.3,
+            max_results=20,
+            offset=10,
+            workspace="/workspace",
+        )
 
-            call_args = mock_client.search.call_args[0][0]
-            assert call_args["query"] == "hello"
-            assert call_args["workspace"] == "/workspace"
-            assert call_args["after"] == "2025-01-01"
-            assert call_args["before"] == "2025-12-31"
-            assert call_args["context_size"] == 5
-            assert call_args["threshold"] == 0.3
-            assert call_args["max_results"] == 20
-            assert call_args["offset"] == 10
-            assert call_args["include_tool_context"] is False
+        call_args = mock_client.search.call_args[0][0]
+        assert call_args["query"] == "hello"
+        assert call_args["workspace"] == "/workspace"
+        assert call_args["after"] == "2025-01-01"
+        assert call_args["before"] == "2025-12-31"
+        assert call_args["context_size"] == 5
+        assert call_args["threshold"] == 0.3
+        assert call_args["max_results"] == 20
+        assert call_args["offset"] == 10
+        assert call_args["include_tool_context"] is False
 
     def test_global_search_same_params_as_before(self, mock_client):
         from kiro_ception.server import search_global_history
