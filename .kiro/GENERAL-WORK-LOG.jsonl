@@ -67,3 +67,11 @@
 {"ts": "2026-09-23T11:49:32+12:00", "event": "PROGRESS_NOTE", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "note": "stash applied into worktree; 4 conflicts (config.default.toml, config.py, server.py, test_tools.py); 5 files applied clean (engine_client, engine_main, test_config, test_engine_client, test_mcp_server_include_tool_context). Resolving conflicts next."}
 
 {"ts": "2026-09-23T12:05:00+12:00", "event": "PROGRESS_NOTE", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "note": "resolved 4 conflicts (kept BOTH sides: rearview instance_label/copilot + my no_follower_timeout/config-tolerance/workspace-scope). Reintegrated operator params (require/exclude/promote/demote) into both search tools — stash server.py predated negative-terms. Fixed stale tolerance tests (instance_label is now a real field) + test_config imports. Full suite 966 passed; ruff 188 vs 207 baseline (no new)."}
+
+{"ts": "2026-09-23T12:07:00+12:00", "event": "MERGE_LOCK_RELEASED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "result": "clean"}
+{"ts": "2026-09-23T12:07:01+12:00", "event": "MERGE_COMPLETED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "merge_commit": "c9d042e"}
+{"ts": "2026-09-23T12:07:02+12:00", "event": "VERIFY_STARTED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "verify_worktree": ".worktrees/verify-unscoped-20260923-1149", "merge_commit": "c9d042e"}
+
+{"ts": "2026-09-23T12:10:00+12:00", "event": "VERIFY_COMPLETED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "build": "N/A", "test": "PASS", "note": "966 passed at merge commit c9d042e in disposable verify worktree. No compile step (Python); test suite is the build."}
+{"ts": "2026-09-23T12:10:01+12:00", "event": "WORKTREE_REMOVED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "kind": "both"}
+{"ts": "2026-09-23T12:10:02+12:00", "event": "WORK_COMPLETED", "work_id": "unscoped-and-engine-fixes-20260923-1149", "session_id": "sess-20260923-1122", "merge_commit": "c9d042e"}
