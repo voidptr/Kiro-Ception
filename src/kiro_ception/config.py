@@ -225,12 +225,19 @@ class ServerConfig:
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
     # Seconds to wait for a newly spawned engine to answer its first health
-    # check. A cold start preloads torch and the embedding model, which can
-    # take a minute or more on some machines. Raising this makes the MCP
-    # process block longer during startup, which is why the default is short:
-    # exceeding it is not fatal — the engine keeps starting in the background
-    # and later tool calls pick it up once it is listening.
-    engine_startup_timeout_seconds: int = 30
+    # check. With the engine now serving /health immediately after election
+    # (before the expensive model preload), this rarely needs to be large —
+    # but a cold torch + embedding-model load can still exceed the old 30s on
+    # slow machines, so the default is generous. Overrunning it is not fatal:
+    # the engine keeps starting in the background and later tool calls pick it
+    # up once it is listening.
+    engine_startup_timeout_seconds: int = 90
+    # Seconds the engine waits for at least one follower (MCP client) to
+    # register before self-terminating as an orphan. Measured from when the
+    # engine becomes READY (preload complete), NOT from process start, so a
+    # slow cold start never counts against this window. Guards against an
+    # engine left running after its spawning client died before registering.
+    no_follower_timeout_seconds: int = 90
     # Engine log file: "auto" = <cache_dir>/engine.log, "" = no file logging,
     # or an explicit path. "auto" keeps the log inside the instance's own
     # cache directory so concurrent instances never share a log file.
@@ -379,6 +386,9 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
         ("server.engine_startup_timeout_seconds",
          old.server.engine_startup_timeout_seconds,
          new.server.engine_startup_timeout_seconds),
+        ("server.no_follower_timeout_seconds",
+         old.server.no_follower_timeout_seconds,
+         new.server.no_follower_timeout_seconds),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.cli.paths", old.cli.paths, new.cli.paths),
         ("sources.cli.session_roots", old.cli.session_roots, new.cli.session_roots),

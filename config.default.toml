@@ -159,6 +159,12 @@ heartbeat_interval_seconds = 30
 # Raise this to trade a slower MCP startup for a ready-on-first-call engine.
 # engine_startup_timeout_seconds = 90
 
+# How long the engine waits for at least one client to register before it
+# self-terminates as an orphan. Measured from when the engine becomes READY
+# (after preload), so a slow cold start never counts against it. Raise it if
+# engines are shutting down during idle gaps between client connections.
+# no_follower_timeout_seconds = 90
+
 # Where the engine writes its log.
 #   "auto"  (default) -> <cache_dir>/engine.log, so each instance logs into its
 #                        own cache directory and concurrent instances never

@@ -27,16 +27,16 @@ class TestEngineStartupTimeout:
     to be raisable on slow machines.
     """
 
-    def test_default_is_thirty_seconds(self):
-        assert Config().server.engine_startup_timeout_seconds == 30
+    def test_default_is_ninety_seconds(self):
+        assert Config().server.engine_startup_timeout_seconds == 90
 
     def test_configurable_from_toml(self):
-        config = Config.from_dict({"server": {"engine_startup_timeout_seconds": 90}})
-        assert config.server.engine_startup_timeout_seconds == 90
+        config = Config.from_dict({"server": {"engine_startup_timeout_seconds": 150}})
+        assert config.server.engine_startup_timeout_seconds == 150
 
     def test_change_is_hot_reloadable(self):
         old = Config()
-        new = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        new = Config(server=ServerConfig(engine_startup_timeout_seconds=150))
         changes = diff_configs(old, new)
         change = next(
             c for c in changes if c["key"] == "server.engine_startup_timeout_seconds"
@@ -46,9 +46,9 @@ class TestEngineStartupTimeout:
     def test_client_reads_the_configured_value(self, monkeypatch):
         from kiro_ception import engine_client
 
-        config = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        config = Config(server=ServerConfig(engine_startup_timeout_seconds=150))
         monkeypatch.setattr(engine_client, "get_config", lambda: config)
-        assert engine_client._startup_timeout() == 90
+        assert engine_client._startup_timeout() == 150
 
     def test_client_falls_back_when_value_is_nonsense(self, monkeypatch):
         from kiro_ception import engine_client
@@ -56,7 +56,12 @@ class TestEngineStartupTimeout:
         for bad in (0, -5):
             config = Config(server=ServerConfig(engine_startup_timeout_seconds=bad))
             monkeypatch.setattr(engine_client, "get_config", lambda c=config: c)
-            assert engine_client._startup_timeout() == 30
+            assert engine_client._startup_timeout() == 90
+
+    def test_no_follower_timeout_default_and_override(self):
+        assert Config().server.no_follower_timeout_seconds == 90
+        config = Config.from_dict({"server": {"no_follower_timeout_seconds": 300}})
+        assert config.server.no_follower_timeout_seconds == 300
 
     def test_client_falls_back_when_config_unreadable(self, monkeypatch):
         from kiro_ception import engine_client
@@ -65,7 +70,7 @@ class TestEngineStartupTimeout:
             raise RuntimeError("no config")
 
         monkeypatch.setattr(engine_client, "get_config", boom)
-        assert engine_client._startup_timeout() == 30
+        assert engine_client._startup_timeout() == 90
 
 
 # --- Config.engine_log_path ---

@@ -24,7 +24,6 @@ Or via Python:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import signal
@@ -65,8 +64,8 @@ def _preload_native_extensions(backend_type: str):
     try:
         import scipy.interpolate  # noqa: F401
         import scipy.stats  # noqa: F401
-        import sklearn  # noqa: F401
         import sentence_transformers  # noqa: F401
+        import sklearn  # noqa: F401
         elapsed = time.perf_counter() - t0
         print(f"Preloaded native extensions in {elapsed:.1f}s")
     except ImportError as e:
@@ -183,8 +182,21 @@ def _is_follower_alive(pid: int) -> bool:
             return False
 
 
-def _build_request_handler(search_handler, config_handler, indexer_getter, follower_registry, startup_fingerprint):
-    """Build the HTTP request handler class with closures over the handlers."""
+def _build_request_handler(search_handler_getter, config_handler_getter, indexer_getter, follower_registry, startup_fingerprint, ready_event):
+    """Build the HTTP request handler class with closures over the handlers.
+
+    ``ready_event`` is a threading.Event set once the expensive preload (torch +
+    embedding model) and index load finish. Before it is set, ``/health`` still
+    answers ``ok`` (so clients know the engine is alive and must NOT kill it),
+    but heavy endpoints that depend on the indexer/search stack return a
+    "starting" response WITHOUT importing any native extension — this preserves
+    the Windows loader-lock invariant (native imports happen only on the main
+    thread while it preloads, never from an HTTP handler thread).
+
+    ``config_handler_getter`` is called lazily (not captured as a value) because
+    the config handler closure is built by the main thread only after preload;
+    it is reached solely from ready-gated branches.
+    """
 
     class EngineRequestHandler(BaseHTTPRequestHandler):
         """HTTP handler for the engine API."""
@@ -210,6 +222,29 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                 self.wfile.write(body_bytes)
             except ImportError:
                 self._send_json(data, status)
+
+        def _reject_if_not_ready(self) -> bool:
+            """If the engine is still preloading, answer 'starting' and return True.
+
+            Must be called at the very top of any handler branch that would
+            otherwise touch the indexer/search stack. Returning before those
+            imports keeps native extensions off the HTTP handler thread while
+            the main thread is mid-preload (Windows loader-lock safety).
+            """
+            if not ready_event.is_set():
+                self._send_json(
+                    {
+                        "status": "starting",
+                        "ready": False,
+                        "message": (
+                            "Engine is warming up (loading embedding model). "
+                            "It is alive — retry shortly."
+                        ),
+                    },
+                    503,
+                )
+                return True
+            return False
 
         def _track_follower(self):
             """Extract X-Follower-PID header and register the follower."""
@@ -251,26 +286,35 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     body = json.loads(raw_body) if raw_body else {}
 
                 if self.path == "/search":
+                    if self._reject_if_not_ready():
+                        return
                     if not is_loopback:
                         body["from_peer"] = True
-                    result = search_handler(body)
+                    result = search_handler_getter()(body)
                     if is_loopback:
                         self._send_json(result)
                     else:
                         self._send_response_maybe_encrypted(result)
 
                 elif self.path == "/reindex":
+                    if self._reject_if_not_ready():
+                        return
                     indexer = indexer_getter()
                     indexer.trigger_reindex()
                     self._send_json({"status": "reindex_triggered"})
 
                 elif self.path == "/rescan":
+                    if self._reject_if_not_ready():
+                        return
                     indexer = indexer_getter()
                     indexer.trigger_rescan()
                     self._send_json({"status": "rescan_triggered"})
 
                 elif self.path == "/reload-config":
-                    from .config import reload_config as _reload, diff_configs
+                    if self._reject_if_not_ready():
+                        return
+                    from .config import diff_configs
+                    from .config import reload_config as _reload
                     old_config, new_config = _reload()
                     changes = diff_configs(old_config, new_config)
                     safe_changes = [c for c in changes if c["impact"] == "safe"]
@@ -304,11 +348,13 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     self._send_dashboard()
 
                 elif self.path == "/status":
+                    if self._reject_if_not_ready():
+                        return
                     indexer = indexer_getter()
                     status = indexer.status.to_dict()
 
-                    from .search import get_search_index
                     from .migrations import get_schema_version
+                    from .search import get_search_index
 
                     search_index = get_search_index()
                     status["search_ready"] = search_index.message_count > 0
@@ -339,8 +385,8 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
 
                     # Memory usage
                     try:
-                        import resource
                         import platform as _platform
+                        import resource
                         mem_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                         if _platform.system() == "Darwin":
                             mem_mb = mem_bytes / (1024 * 1024)
@@ -416,14 +462,21 @@ def _build_request_handler(search_handler, config_handler, indexer_getter, follo
                     self._send_json(status)
 
                 elif self.path == "/config":
-                    self._send_json(config_handler())
+                    if self._reject_if_not_ready():
+                        return
+                    self._send_json(config_handler_getter()())
 
                 elif self.path == "/health":
+                    # Always answers ok once the socket is bound — even during
+                    # preload — so clients know the engine is ALIVE and must not
+                    # kill/respawn it. `ready` tells them whether heavy endpoints
+                    # are usable yet.
                     self._send_json({
                         "status": "ok",
                         "role": "engine",
                         "pid": os.getpid(),
                         "code_fingerprint": startup_fingerprint,
+                        "ready": ready_event.is_set(),
                     })
 
                 elif self.path == "/role":
@@ -477,7 +530,7 @@ def main():
         from .config import set_config_file
         set_config_file(args.config)
 
-    from .config import get_config, expand_path
+    from .config import expand_path, get_config
     config = get_config()
 
     port = args.port or config.server.engine_port
@@ -522,10 +575,72 @@ def main():
     _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
     _log(f"Acquired engineship (pid={os.getpid()}, port={port})")
 
-    # === PRELOAD NATIVE EXTENSIONS (before any threads) ===
-    # Still has to happen before any thread starts — see the function's
-    # docstring for the Windows loader-lock deadlock this avoids — but now only
-    # the winner pays for it.
+    # === SERVE /health BEFORE THE EXPENSIVE PRELOAD ===
+    # The preload (torch + embedding model) can take a minute or more. If we
+    # only started answering HTTP after it, every follow-on client's /health
+    # check would get connection-refused, conclude the (perfectly healthy,
+    # still-warming) engine is "stale", TerminateProcess it, and respawn —
+    # churning the lock and restarting the preload from scratch each time.
+    # Instead we bind the socket and serve immediately: /health answers "ok"
+    # right away, heavy endpoints answer "starting" (503) until ready_event is
+    # set. The HTTP server runs on a DAEMON thread so the MAIN thread remains
+    # free to do the native-extension preload alone — preserving the Windows
+    # loader-lock invariant (native DLLs imported only on the main thread while
+    # no other thread imports native code; the HTTP thread never does).
+    ready_event = threading.Event()
+    _deps: dict = {"config_handler": None}
+    follower_registry = FollowerRegistry()
+
+    RequestHandler = _build_request_handler(
+        search_handler_getter=lambda: _deps["search_handler"],
+        config_handler_getter=lambda: _deps["config_handler"],
+        indexer_getter=lambda: _deps["indexer"],
+        follower_registry=follower_registry,
+        startup_fingerprint=args.fingerprint,
+        ready_event=ready_event,
+    )
+
+    # Try primary port, fall back to +1
+    try:
+        server = ThreadingHTTPServer((bind_address, port), RequestHandler)
+    except OSError:
+        port += 1
+        _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
+        try:
+            server = ThreadingHTTPServer((bind_address, port), RequestHandler)
+        except OSError:
+            print(
+                f"ERROR: Could not bind to port {port - 1} or {port}. "
+                f"Both are in use. Check for stale engine processes or change "
+                f"server.engine_port in your config.",
+                flush=True,
+            )
+            lock.release()
+            sys.exit(1)
+
+    server.timeout = 1
+    shutdown_event = threading.Event()
+
+    def _shutdown_handler(signum, frame):
+        _log(f"Received signal {signum}, shutting down...")
+        shutdown_event.set()
+
+    signal.signal(signal.SIGINT, _shutdown_handler)
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+
+    def _serve_loop():
+        while not shutdown_event.is_set():
+            server.handle_request()
+
+    server_thread = threading.Thread(target=_serve_loop, daemon=True, name="http-server")
+    server_thread.start()
+    _log(f"HTTP server listening on {bind_address}:{port} (pre-preload; /health live)")
+    _log(f"Dashboard: http://127.0.0.1:{port}/")
+
+    # === PRELOAD NATIVE EXTENSIONS (main thread only) ===
+    # Runs on the main thread while the only other live thread is the HTTP
+    # server, which does not import native code — so the loader-lock invariant
+    # holds. Heavy endpoints stay gated behind ready_event until this finishes.
     _preload_native_extensions(config.embedding.backend)
 
     # === START BACKGROUND INDEXER ===
@@ -538,8 +653,13 @@ def main():
     # Eagerly load the search index from existing cache
     get_search_index()
 
+    # Wire the now-ready dependencies into the live handler.
+    _deps["indexer"] = indexer
+    _deps["search_handler"] = handle_search_request
+
     # === BUILD CONFIG HANDLER ===
     import platform as _platform
+
     from .memory import get_memory_limit
 
     def config_handler() -> dict:
@@ -629,11 +749,16 @@ def main():
             },
         }
 
+    # Config handler is ready — wire it in and flip the engine to READY.
+    _deps["config_handler"] = config_handler
+    ready_event.set()
+    _log("Engine READY — preload complete, heavy endpoints enabled")
+
     # === START HEARTBEAT THREAD ===
     def heartbeat_loop():
         """Periodically refresh engine.json's heartbeat_at timestamp."""
         interval = config.server.heartbeat_interval_seconds
-        while True:
+        while not shutdown_event.is_set():
             time.sleep(interval)
             try:
                 _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
@@ -643,81 +768,42 @@ def main():
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="heartbeat")
     heartbeat_thread.start()
 
-    # === START HTTP SERVER (on main thread) ===
-    follower_registry = FollowerRegistry()
-
-    RequestHandler = _build_request_handler(
-        search_handler=handle_search_request,
-        config_handler=config_handler,
-        indexer_getter=get_background_indexer,
-        follower_registry=follower_registry,
-        startup_fingerprint=args.fingerprint,
-    )
-
-    # Try primary port, fall back to +1
+    # === MAIN-THREAD SUPERVISION LOOP ===
+    # The HTTP server already runs on its own daemon thread; this loop only
+    # supervises follower liveness and decides when to self-terminate. It runs
+    # on a wall-clock cadence (independent of request traffic). The no-follower
+    # orphan window is measured from READY (now), not process start, so a slow
+    # cold start never counts against it.
+    _FOLLOWER_CHECK_INTERVAL = 10  # seconds
     try:
-        server = ThreadingHTTPServer((bind_address, port), RequestHandler)
-    except OSError:
-        port += 1
-        _write_engine_info(port, os.getpid(), cache_dir, _PROCESS_START_TIME)
-        try:
-            server = ThreadingHTTPServer((bind_address, port), RequestHandler)
-        except OSError:
-            print(
-                f"ERROR: Could not bind to port {port - 1} or {port}. "
-                f"Both are in use. Check for stale engine processes or change "
-                f"server.engine_port in your config.",
-                flush=True,
-            )
-            lock.release()
-            sys.exit(1)
+        no_follower_timeout = config.server.no_follower_timeout_seconds
+    except Exception:
+        no_follower_timeout = 90
+    _ready_time = time.time()
 
-    server.timeout = 1
-
-    # Handle graceful shutdown
-    shutdown_event = threading.Event()
-
-    def _shutdown_handler(signum, frame):
-        _log(f"Received signal {signum}, shutting down...")
-        shutdown_event.set()
-
-    signal.signal(signal.SIGINT, _shutdown_handler)
-    signal.signal(signal.SIGTERM, _shutdown_handler)
-
-    _last_follower_check: float = 0
-    _FOLLOWER_CHECK_INTERVAL = 10  # Check follower liveness every 10s
-    _NO_FOLLOWER_TIMEOUT = 120  # Shut down if no follower registers within 2 minutes
-    _engine_start_time = time.time()
-
-    _log(f"HTTP server listening on {bind_address}:{port}")
-    _log(f"Dashboard: http://127.0.0.1:{port}/")
-
-    # Run server on main thread (blocking)
     try:
         while not shutdown_event.is_set():
-            server.handle_request()
-
-            # Periodically check if registered followers are still alive
+            shutdown_event.wait(_FOLLOWER_CHECK_INTERVAL)
+            if shutdown_event.is_set():
+                break
             now = time.time()
-            if now - _last_follower_check >= _FOLLOWER_CHECK_INTERVAL:
-                _last_follower_check = now
-                # Only shut down if at least one follower registered and all are now dead
-                if follower_registry.count > 0:
-                    if not follower_registry.has_live_followers():
-                        _log("All followers are dead — shutting down")
-                        break
-                elif now - _engine_start_time > _NO_FOLLOWER_TIMEOUT:
-                    # No follower ever registered — spawning client likely died
-                    # before making any requests. Shut down to avoid orphan.
-                    _log(
-                        f"No followers registered within {_NO_FOLLOWER_TIMEOUT}s "
-                        f"— shutting down (orphan protection)"
-                    )
+            if follower_registry.count > 0:
+                if not follower_registry.has_live_followers():
+                    _log("All followers are dead — shutting down")
                     break
+            elif now - _ready_time > no_follower_timeout:
+                # No follower ever registered — spawning client likely died
+                # before making any requests. Shut down to avoid an orphan.
+                _log(
+                    f"No followers registered within {no_follower_timeout}s "
+                    f"— shutting down (orphan protection)"
+                )
+                break
     except KeyboardInterrupt:
         pass
     finally:
         _log("Shutting down...")
+        shutdown_event.set()
         server.server_close()
         indexer.stop()
         try:
