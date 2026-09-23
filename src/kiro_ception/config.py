@@ -1,9 +1,12 @@
 """Configuration management for Kiro Ception."""
 
+import logging
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger("kiro-ception")
 
 # Default paths
 CONFIG_DIR = Path.home() / ".config" / "kiro-ception"
@@ -229,7 +232,10 @@ class SearchConfig:
     default_max_results: int = 10
     default_context_window: int = 3
     recency_floor: float = 0.85  # Minimum recency multiplier (oldest message gets this)
-    workspace_dir: str = ""  # Override workspace for search_project_history (empty = auto-detect)
+    workspace_dir: str = ""  # Optional default scope for search_project_history.
+    # Empty = UNSCOPED (search all workspaces). This is the only server-side
+    # scope source; there is no env/cwd auto-detection. Agents that want a
+    # specific scope pass `workspace` on the tool call instead.
 
 
 @dataclass
@@ -257,12 +263,20 @@ class ServerConfig:
     deferred_init: bool = False  # If True, delay engine election until first tool call
     heartbeat_interval_seconds: int = 30  # How often to check engine liveness
     # Seconds to wait for a newly spawned engine to answer its first health
-    # check. A cold start preloads torch and the embedding model, which can
-    # take a minute or more on some machines. Raising this makes the MCP
-    # process block longer during startup, which is why the default is short:
-    # exceeding it is not fatal — the engine keeps starting in the background
-    # and later tool calls pick it up once it is listening.
-    engine_startup_timeout_seconds: int = 30
+    # Seconds to wait for a newly spawned engine to answer its first health
+    # check. With the engine now serving /health immediately after election
+    # (before the expensive model preload), this rarely needs to be large —
+    # but a cold torch + embedding-model load can still exceed the old 30s on
+    # slow machines, so the default is generous. Overrunning it is not fatal:
+    # the engine keeps starting in the background and later tool calls pick it
+    # up once it is listening.
+    engine_startup_timeout_seconds: int = 90
+    # Seconds the engine waits for at least one follower (MCP client) to
+    # register before self-terminating as an orphan. Measured from when the
+    # engine becomes READY (preload complete), NOT from process start, so a
+    # slow cold start never counts against this window. Guards against an
+    # engine left running after its spawning client died before registering.
+    no_follower_timeout_seconds: int = 90
     # Short name distinguishing this instance from other instances running
     # alongside it. Appended to every tool description, since concurrent
     # instances otherwise expose identical tool names and docstrings. This is
@@ -399,18 +413,48 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
-        """Create config from dictionary."""
-        cli_data = data.get("sources", {}).get("cli", {})
-        ide_data = data.get("sources", {}).get("ide", {})
-        claude_data = data.get("sources", {}).get("claude", {})
-        copilot_data = data.get("sources", {}).get("copilot", {})
-        emb_data = data.get("embedding", {})
-        search_data = data.get("search", {})
-        mem_data = data.get("memory", {})
-        idx_data = data.get("indexing", {})
-        srv_data = data.get("server", {})
-        peers_data = data.get("peers", {})
-        tool_summaries_data = data.get("tool_summaries", {})
+        """Create config from dictionary.
+
+        Unknown keys in any section are logged and ignored rather than raising.
+        A single stale or misspelled key must never crash the engine on startup
+        (historically an unexpected kwarg like ``instance_label`` raised
+        TypeError and took the whole engine down on every launch).
+        """
+
+        def _known(section_cls, section_data: dict, section_name: str) -> dict:
+            """Drop keys the dataclass doesn't define, warning on each."""
+            if not section_data:
+                return {}
+            valid = {f.name for f in fields(section_cls)}
+            filtered = {}
+            for key, value in section_data.items():
+                if key in valid:
+                    filtered[key] = value
+                else:
+                    logger.warning(
+                        "[config] ignoring unknown key '%s' in [%s] "
+                        "(not a recognized %s field)",
+                        key, section_name, section_cls.__name__,
+                    )
+            return filtered
+
+        cli_data = _known(CLISourceConfig, data.get("sources", {}).get("cli", {}), "sources.cli")
+        ide_data = _known(IDESourceConfig, data.get("sources", {}).get("ide", {}), "sources.ide")
+        claude_data = _known(
+            ClaudeSourceConfig, data.get("sources", {}).get("claude", {}), "sources.claude"
+        )
+        copilot_data = _known(
+            CopilotSourceConfig, data.get("sources", {}).get("copilot", {}), "sources.copilot"
+        )
+        emb_data = _known(EmbeddingConfig, data.get("embedding", {}), "embedding")
+        search_data = _known(SearchConfig, data.get("search", {}), "search")
+        mem_data = _known(MemoryConfig, data.get("memory", {}), "memory")
+        idx_data = _known(IndexingConfig, data.get("indexing", {}), "indexing")
+        srv_data = _known(ServerConfig, data.get("server", {}), "server")
+        peers_data = _known(PeersConfig, data.get("peers", {}), "peers")
+        tool_summaries_data = _known(
+            ToolSummariesConfig, data.get("tool_summaries", {}), "tool_summaries"
+        )
 
         return cls(
             cli=CLISourceConfig(**cli_data) if cli_data else CLISourceConfig(),
@@ -492,6 +536,9 @@ def diff_configs(old: Config, new: Config) -> list[dict]:
          new.server.engine_startup_timeout_seconds),
         # Applied to tool descriptions at import time — takes effect on restart.
         ("server.instance_label", old.server.instance_label, new.server.instance_label),
+        ("server.no_follower_timeout_seconds",
+         old.server.no_follower_timeout_seconds,
+         new.server.no_follower_timeout_seconds),
         ("sources.cli.enabled", old.cli.enabled, new.cli.enabled),
         ("sources.cli.paths", old.cli.paths, new.cli.paths),
         ("sources.cli.session_roots", old.cli.session_roots, new.cli.session_roots),

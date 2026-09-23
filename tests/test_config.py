@@ -1,10 +1,11 @@
 """Unit tests for config.py — configuration loading, parsing, and diffing."""
 
-import pytest
 
 from kiro_ception.config import (
     CLISourceConfig,
+    ClaudeSourceConfig,
     Config,
+    CopilotSourceConfig,
     EmbeddingConfig,
     IDESourceConfig,
     IndexingConfig,
@@ -14,6 +15,47 @@ from kiro_ception.config import (
     diff_configs,
     expand_path,
 )
+
+# --- Unknown-key tolerance (from_dict must not crash on stale/unknown keys) ---
+
+
+class TestFromDictTolerance:
+    """A stale or misspelled config key must be ignored with a warning, never
+    crash the engine. Historically an unexpected kwarg (e.g. a since-removed
+    field) raised TypeError in a *Config.__init__ and killed the engine on
+    every start."""
+
+    def test_unknown_server_key_is_ignored(self):
+        config = Config.from_dict(
+            {"server": {"engine_port": 20000, "since_removed_key": "legacy"}}
+        )
+        assert config.server.engine_port == 20000  # known key still applied
+        assert not hasattr(config.server, "since_removed_key")
+
+    def test_unknown_key_warns(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="kiro-ception"):
+            Config.from_dict({"server": {"since_removed_key": "legacy"}})
+        assert any("since_removed_key" in r.message for r in caplog.records)
+
+    def test_unknown_keys_across_multiple_sections(self):
+        # None of these should raise.
+        config = Config.from_dict(
+            {
+                "embedding": {"model": "x", "bogus_embed": 1},
+                "search": {"default_threshold": 0.3, "old_flag": True},
+                "sources": {"cli": {"enabled": False, "gone": "yes"}},
+            }
+        )
+        assert config.embedding.model == "x"
+        assert config.search.default_threshold == 0.3
+        assert config.cli.enabled is False
+
+    def test_no_follower_timeout_default_and_override(self):
+        assert Config().server.no_follower_timeout_seconds == 90
+        config = Config.from_dict({"server": {"no_follower_timeout_seconds": 300}})
+        assert config.server.no_follower_timeout_seconds == 300
 
 
 # --- Engine startup timeout ---
@@ -27,16 +69,16 @@ class TestEngineStartupTimeout:
     to be raisable on slow machines.
     """
 
-    def test_default_is_thirty_seconds(self):
-        assert Config().server.engine_startup_timeout_seconds == 30
+    def test_default_is_ninety_seconds(self):
+        assert Config().server.engine_startup_timeout_seconds == 90
 
     def test_configurable_from_toml(self):
-        config = Config.from_dict({"server": {"engine_startup_timeout_seconds": 90}})
-        assert config.server.engine_startup_timeout_seconds == 90
+        config = Config.from_dict({"server": {"engine_startup_timeout_seconds": 150}})
+        assert config.server.engine_startup_timeout_seconds == 150
 
     def test_change_is_hot_reloadable(self):
         old = Config()
-        new = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        new = Config(server=ServerConfig(engine_startup_timeout_seconds=150))
         changes = diff_configs(old, new)
         change = next(
             c for c in changes if c["key"] == "server.engine_startup_timeout_seconds"
@@ -46,9 +88,9 @@ class TestEngineStartupTimeout:
     def test_client_reads_the_configured_value(self, monkeypatch):
         from kiro_ception import engine_client
 
-        config = Config(server=ServerConfig(engine_startup_timeout_seconds=90))
+        config = Config(server=ServerConfig(engine_startup_timeout_seconds=150))
         monkeypatch.setattr(engine_client, "get_config", lambda: config)
-        assert engine_client._startup_timeout() == 90
+        assert engine_client._startup_timeout() == 150
 
     def test_client_falls_back_when_value_is_nonsense(self, monkeypatch):
         from kiro_ception import engine_client
@@ -56,7 +98,7 @@ class TestEngineStartupTimeout:
         for bad in (0, -5):
             config = Config(server=ServerConfig(engine_startup_timeout_seconds=bad))
             monkeypatch.setattr(engine_client, "get_config", lambda c=config: c)
-            assert engine_client._startup_timeout() == 30
+            assert engine_client._startup_timeout() == 90
 
     def test_client_falls_back_when_config_unreadable(self, monkeypatch):
         from kiro_ception import engine_client
@@ -65,7 +107,7 @@ class TestEngineStartupTimeout:
             raise RuntimeError("no config")
 
         monkeypatch.setattr(engine_client, "get_config", boom)
-        assert engine_client._startup_timeout() == 30
+        assert engine_client._startup_timeout() == 90
 
 
 # --- Instance identity ---
@@ -254,7 +296,6 @@ class TestExpandPath:
         assert result.name == "test"
 
     def test_absolute_path_unchanged(self):
-        from pathlib import PurePosixPath, PureWindowsPath
         result = expand_path("/tmp/test")
         # On Windows, Path("/tmp/test") becomes \tmp\test
         assert result.parts[-2:] == ("tmp", "test")

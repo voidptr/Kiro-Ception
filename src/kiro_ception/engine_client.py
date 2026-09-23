@@ -20,7 +20,7 @@ from pathlib import Path
 
 import requests
 
-from .config import get_config, expand_path
+from .config import expand_path, get_config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -32,7 +32,7 @@ if not logger.handlers:
 
 # Default wait for a freshly-spawned engine to become healthy. Overridable via
 # server.engine_startup_timeout_seconds — see _startup_timeout().
-_ENGINE_STARTUP_TIMEOUT = 30  # seconds
+_ENGINE_STARTUP_TIMEOUT = 90  # seconds
 _HEALTH_CHECK_TIMEOUT = 5  # seconds per health check attempt
 _HEALTH_CHECK_RETRIES = 2
 
@@ -180,11 +180,10 @@ def spawn_engine() -> bool:
     time before spawning and only accept an engine.json with a started_at
     timestamp newer than that.
     """
-    config = get_config()
     cmd = _find_engine_executable()
 
     # Pass config file if we have an override
-    from .config import get_config_file, CONFIG_FILE
+    from .config import CONFIG_FILE, get_config_file
     config_file = get_config_file()
     if config_file != CONFIG_FILE and config_file.exists():
         cmd.extend(["--config", str(config_file)])
@@ -327,6 +326,16 @@ def _kill_stale_engine(pid: int) -> bool:
             return False
 
 
+def _wait_for_pid_death(pid: int, timeout: float = 5.0) -> bool:
+    """Poll until a PID is gone or the timeout elapses. Returns True if it died."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _is_pid_alive(pid):
+            return True
+        time.sleep(0.2)
+    return not _is_pid_alive(pid)
+
+
 def ensure_engine_running() -> bool:
     """Ensure a healthy engine process is running. Spawn one if needed.
 
@@ -400,21 +409,53 @@ def ensure_engine_running() -> bool:
             logger.info(f"Engine health check returned status {resp.status_code}")
     except Exception as e:
         logger.info(f"Engine health check failed: {type(e).__name__}: {e}")
+        # The PID is alive (checked above) but /health didn't answer. The most
+        # common cause is a still-warming engine: it has won the lock and is
+        # binding its socket / mid-preload, and simply hasn't started answering
+        # yet. Killing it here is exactly the bug that caused the lock-churn
+        # stampede (four engines each restarting the ~73s preload). So: since
+        # the PID is alive, wait for it to come up instead of killing it.
+        logger.info(
+            f"Engine pid={pid} is alive but not answering health yet — "
+            f"treating as still-warming, waiting up to {_startup_timeout()}s"
+        )
+        deadline = time.time() + _startup_timeout()
+        while time.time() < deadline:
+            time.sleep(0.5)
+            if not _is_pid_alive(pid):
+                # It died on its own while warming — no need to kill, just
+                # clean the lock and spawn a fresh one.
+                logger.info(f"Warming engine pid={pid} died — spawning fresh")
+                try:
+                    (_get_cache_dir() / "engine.lock").unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return spawn_engine()
+            if _check_engine_health(port):
+                logger.info(f"Warming engine pid={pid} is now healthy — connecting")
+                return True
+        # PID still alive at deadline but never answered — genuinely stuck.
+        logger.warning(
+            f"Engine pid={pid} alive but never became healthy within "
+            f"{_startup_timeout()}s — killing as stuck"
+        )
+        _kill_stale_engine(pid)
+        _wait_for_pid_death(pid, timeout=5.0)
+        try:
+            (_get_cache_dir() / "engine.lock").unlink(missing_ok=True)
+        except OSError:
+            pass
+        return spawn_engine()
 
-    # Engine is either unhealthy or stale — kill and respawn
-    logger.warning(f"Engine (pid={pid}) is stale or unresponsive — killing")
+    # Engine answered health but is a genuinely stale build (fingerprint
+    # mismatch) — kill and respawn.
+    logger.warning(f"Engine (pid={pid}) is stale — killing")
     _kill_stale_engine(pid)
-    deadline = time.time() + 5.0
-    while time.time() < deadline:
-        if not _is_pid_alive(pid):
-            break
-        time.sleep(0.2)
-
+    _wait_for_pid_death(pid, timeout=5.0)
     try:
         (_get_cache_dir() / "engine.lock").unlink(missing_ok=True)
     except OSError:
         pass
-
     return spawn_engine()
 
 

@@ -4,26 +4,17 @@ import hashlib
 import json
 import os
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from kiro_ception.engine_client import (
+    EngineClient,
+    _check_engine_health,
     _compute_code_fingerprint,
     _find_engine_executable,
-    _is_pid_alive,
     _read_engine_info,
-    _check_engine_health,
-    _kill_stale_engine,
-    _get_cache_dir,
     ensure_engine_running,
-    spawn_engine,
-    get_engine_client,
-    EngineClient,
     is_engine_running,
 )
-
 
 # --- _compute_code_fingerprint ---
 
@@ -239,20 +230,67 @@ class TestEnsureEngineRunning:
             assert result is True
             mock_spawn.assert_called_once()
 
-    def test_kills_unresponsive_engine(self, tmp_path, monkeypatch):
-        """Engine PID alive but HTTP fails → kill and respawn."""
+    def test_warming_engine_that_dies_is_respawned_without_kill(self, tmp_path, monkeypatch):
+        """PID alive but HTTP failing = still warming. If it then dies on its own,
+        we spawn fresh and never call _kill_stale_engine."""
         monkeypatch.setattr("kiro_ception.engine_client._get_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("kiro_ception.engine_client._startup_timeout", lambda: 5)
+        monkeypatch.setattr("kiro_ception.engine_client.time.sleep", lambda s: None)
         info = {"port": 19760, "pid": 99999}
         (tmp_path / "engine.json").write_text(json.dumps(info))
 
         with (
+            # initial alive check True; then dies inside the warming wait loop
             patch("kiro_ception.engine_client._is_pid_alive", side_effect=[True, False]),
             patch("kiro_ception.engine_client.requests.get", side_effect=Exception("timeout")),
-            patch("kiro_ception.engine_client._kill_stale_engine", return_value=True),
+            patch("kiro_ception.engine_client._check_engine_health", return_value=False),
+            patch("kiro_ception.engine_client._kill_stale_engine") as mock_kill,
             patch("kiro_ception.engine_client.spawn_engine", return_value=True) as mock_spawn,
         ):
             result = ensure_engine_running()
             assert result is True
+            mock_spawn.assert_called_once()
+            mock_kill.assert_not_called()  # never kill a warming engine that self-exited
+
+    def test_warming_engine_that_becomes_healthy_is_connected(self, tmp_path, monkeypatch):
+        """PID alive, HTTP initially failing, then becomes healthy → connect, no respawn."""
+        monkeypatch.setattr("kiro_ception.engine_client._get_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("kiro_ception.engine_client._startup_timeout", lambda: 5)
+        monkeypatch.setattr("kiro_ception.engine_client.time.sleep", lambda s: None)
+        info = {"port": 19760, "pid": 99999}
+        (tmp_path / "engine.json").write_text(json.dumps(info))
+
+        with (
+            patch("kiro_ception.engine_client._is_pid_alive", return_value=True),
+            patch("kiro_ception.engine_client.requests.get", side_effect=Exception("timeout")),
+            patch("kiro_ception.engine_client._check_engine_health", return_value=True),
+            patch("kiro_ception.engine_client._kill_stale_engine") as mock_kill,
+            patch("kiro_ception.engine_client.spawn_engine", return_value=True) as mock_spawn,
+        ):
+            result = ensure_engine_running()
+            assert result is True
+            mock_kill.assert_not_called()
+            mock_spawn.assert_not_called()  # connected to the warming engine, no respawn
+
+    def test_stuck_engine_is_killed_and_respawned(self, tmp_path, monkeypatch):
+        """PID stays alive but never answers health within the window → kill as stuck, respawn."""
+        monkeypatch.setattr("kiro_ception.engine_client._get_cache_dir", lambda: tmp_path)
+        # startup_timeout=0 → warming wait loop never iterates → straight to stuck path.
+        monkeypatch.setattr("kiro_ception.engine_client._startup_timeout", lambda: 0)
+        monkeypatch.setattr("kiro_ception.engine_client.time.sleep", lambda s: None)
+        info = {"port": 19760, "pid": 99999}
+        (tmp_path / "engine.json").write_text(json.dumps(info))
+
+        with (
+            patch("kiro_ception.engine_client._is_pid_alive", return_value=True),
+            patch("kiro_ception.engine_client.requests.get", side_effect=Exception("timeout")),
+            patch("kiro_ception.engine_client._check_engine_health", return_value=False),
+            patch("kiro_ception.engine_client._kill_stale_engine", return_value=True) as mock_kill,
+            patch("kiro_ception.engine_client.spawn_engine", return_value=True) as mock_spawn,
+        ):
+            result = ensure_engine_running()
+            assert result is True
+            mock_kill.assert_called_once()
             mock_spawn.assert_called_once()
 
 
