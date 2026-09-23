@@ -277,3 +277,45 @@ class TestDiffConfigs:
 
         for c in changes:
             assert c["impact"] == "safe"
+
+
+
+# --- Unknown-key tolerance (from_dict must not crash on stale/unknown keys) ---
+
+
+class TestFromDictTolerance:
+    """A stale or misspelled config key must be ignored with a warning, never
+    crash the engine. An unexpected kwarg otherwise raises TypeError in a
+    *Config.__init__ and kills the engine on every start."""
+
+    def test_unknown_server_key_is_ignored(self):
+        config = Config.from_dict(
+            {"server": {"engine_port": 20000, "since_removed_key": "legacy"}}
+        )
+        assert config.server.engine_port == 20000  # known key still applied
+        assert not hasattr(config.server, "since_removed_key")
+
+    def test_unknown_key_warns(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="kiro-ception"):
+            Config.from_dict({"server": {"since_removed_key": "legacy"}})
+        assert any("since_removed_key" in r.message for r in caplog.records)
+
+    def test_unknown_keys_across_multiple_sections(self):
+        # None of these should raise.
+        config = Config.from_dict(
+            {
+                "embedding": {"model": "x", "bogus_embed": 1},
+                "search": {"default_threshold": 0.3, "old_flag": True},
+                "sources": {"cli": {"enabled": False, "gone": "yes"}},
+            }
+        )
+        assert config.embedding.model == "x"
+        assert config.search.default_threshold == 0.3
+        assert config.cli.enabled is False
+
+    def test_known_keys_still_applied(self):
+        # Sanity: valid config still loads correctly with the filter in place.
+        config = Config.from_dict({"server": {"engine_port": 12345}})
+        assert config.server.engine_port == 12345

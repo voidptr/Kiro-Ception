@@ -1,9 +1,12 @@
 """Configuration management for Kiro Ception."""
 
+import logging
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger("kiro-ception")
 
 # Default paths
 CONFIG_DIR = Path.home() / ".config" / "kiro-ception"
@@ -290,17 +293,45 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
-        """Create config from dictionary."""
-        cli_data = data.get("sources", {}).get("cli", {})
-        ide_data = data.get("sources", {}).get("ide", {})
-        claude_data = data.get("sources", {}).get("claude", {})
-        emb_data = data.get("embedding", {})
-        search_data = data.get("search", {})
-        mem_data = data.get("memory", {})
-        idx_data = data.get("indexing", {})
-        srv_data = data.get("server", {})
-        peers_data = data.get("peers", {})
-        tool_summaries_data = data.get("tool_summaries", {})
+        """Create config from dictionary.
+
+        Unknown keys in any section are logged and ignored rather than raising.
+        A single stale or misspelled key must never crash the engine on startup
+        (an unexpected kwarg otherwise raises TypeError in a *Config.__init__
+        and takes the whole engine down on every launch).
+        """
+
+        def _known(section_cls, section_data: dict, section_name: str) -> dict:
+            """Drop keys the dataclass doesn't define, warning on each."""
+            if not section_data:
+                return {}
+            valid = {f.name for f in fields(section_cls)}
+            filtered = {}
+            for key, value in section_data.items():
+                if key in valid:
+                    filtered[key] = value
+                else:
+                    logger.warning(
+                        "[config] ignoring unknown key '%s' in [%s] "
+                        "(not a recognized %s field)",
+                        key, section_name, section_cls.__name__,
+                    )
+            return filtered
+
+        cli_data = _known(CLISourceConfig, data.get("sources", {}).get("cli", {}), "sources.cli")
+        ide_data = _known(IDESourceConfig, data.get("sources", {}).get("ide", {}), "sources.ide")
+        claude_data = _known(
+            ClaudeSourceConfig, data.get("sources", {}).get("claude", {}), "sources.claude"
+        )
+        emb_data = _known(EmbeddingConfig, data.get("embedding", {}), "embedding")
+        search_data = _known(SearchConfig, data.get("search", {}), "search")
+        mem_data = _known(MemoryConfig, data.get("memory", {}), "memory")
+        idx_data = _known(IndexingConfig, data.get("indexing", {}), "indexing")
+        srv_data = _known(ServerConfig, data.get("server", {}), "server")
+        peers_data = _known(PeersConfig, data.get("peers", {}), "peers")
+        tool_summaries_data = _known(
+            ToolSummariesConfig, data.get("tool_summaries", {}), "tool_summaries"
+        )
 
         return cls(
             cli=CLISourceConfig(**cli_data) if cli_data else CLISourceConfig(),
